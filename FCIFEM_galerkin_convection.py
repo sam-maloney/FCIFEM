@@ -23,20 +23,27 @@ def mapping(points, x=0., theta=False, deriv=False):
         return np.arctan(A*np.cos(points[:,0] - phase))
     else:
         offsets = points[:,1] - A*np.sin(points[:,0] - phase)
-        return (A*np.sin(x - phase) + offsets) % 1
+        return (A*np.sin(x - phase) + offsets) % 1 % 1
+
+# mapping(np.array([[9*np.pi/6, 0.1]]), 4*np.pi/3)
 
 def f(points):
     return np.repeat(0., len(points))
 
-NX = 6  # number of planes
+NX = 5  # number of planes
 NY = 20 # number of grid divisions on plane
 nNodes = NX*NY
 
 Nquad = 20
 ndim = 2
 
-dx = 2*np.pi/NX
-dy = 1/NY
+# nodeX = 2*np.pi*np.arange(NX+1)/NX
+nodeX = np.array([0., 1, 2.5, 3.5, 5, 2*np.pi])
+nodeY = np.tile(np.linspace(0, 1, NY+1), NX).reshape(NX,-1)
+
+dx = nodeX[1:]-nodeX[0:NX]
+dy = nodeY[:,1:]-nodeY[:,:NY]
+# dy = 1/NY
 
 # velocity = np.array([1., 0.])
 velocity = np.array([1., 0.03183098861837907])
@@ -51,31 +58,28 @@ diffusivity += D_i*np.eye(2)
 
 arcLengths = np.array([scipy.integrate.quad(lambda x: 
     np.sqrt(1 + mapping(np.array([[x,0]]), deriv=True)**2),
-    i*dx, (i+1)*dx)[0] for i in range(NX)])
+    nodeX[i], nodeX[i+1])[0] for i in range(NX)])
 
-nSteps = int(np.rint(np.sum(arcLengths[:])*100)) * 0
 dt = 0.01
+# nSteps = int(np.rint(np.sum(dx[0:3])/dt))
+nSteps = 314
 
-nodeX = np.array([i*dx for i in range(NX)])
-nodeY = np.linspace(0, 1-dy, NY)
-# nodeY = [np.linspace(0, 1, NY) for i in range(NX)]
-
-# generate quadrature points
-offsets, weights = roots_legendre(Nquad)
-offsets = [offsets * np.pi / NX, offsets / (2*NY)]
-weights = [weights * np.pi / NX, weights / (2*NY)]
-quads = ( np.indices([1, NY], dtype='float').T.reshape(-1, ndim) + 0.5 ) \
-      * [2*np.pi/NX, 1/NY]
-quadWeights = np.repeat(1., len(quads))
-for i in range(ndim):
-    quads = np.concatenate( [quads + 
-        offset*np.eye(ndim)[i] for offset in offsets[i]] )
-    quadWeights = np.concatenate(
-        [quadWeights * weight for weight in weights[i]] )
-nQuads = len(quads)
+# # generate quadrature points
+# offsets, weights = roots_legendre(Nquad)
+# offsets = [offsets * np.pi / NX, offsets / (2*NY)]
+# weights = [weights * np.pi / NX, weights / (2*NY)]
+# quads = ( np.indices([1, NY], dtype='float').T.reshape(-1, ndim) + 0.5 ) \
+#       * [2*np.pi/NX, 1/NY]
+# quadWeights = np.repeat(1., len(quads))
+# for i in range(ndim):
+#     quads = np.concatenate( [quads + 
+#         offset*np.eye(ndim)[i] for offset in offsets[i]] )
+#     quadWeights = np.concatenate(
+#         [quadWeights * weight for weight in weights[i]] )
 
 # pre-allocate arrays for stiffness matrix triplets
 nEntries = (2*ndim)**2
+nQuads = NY*Nquad**2
 nMaxEntries = nEntries * nQuads * NX
 Kdata = np.zeros(nMaxEntries)
 Adata = np.zeros(nMaxEntries)
@@ -84,48 +88,120 @@ row_ind = np.zeros(nMaxEntries, dtype='int')
 col_ind = np.zeros(nMaxEntries, dtype='int')
 b = np.zeros(nNodes)
 
+# offsets_old, weights_old = roots_legendre(Nquad)
+# offsets_old = [offsets_old * np.pi / NX, offsets_old / (2*NY)]
+# weights_old = [weights_old * np.pi / NX, weights_old / (2*NY)]
+# quads_old = ( np.indices([1, NY], dtype='float').T.reshape(-1, ndim) + 0.5 ) \
+#       * [2*np.pi/NX, 1/NY]
+# quadWeights_old = np.repeat(1., len(quads_old))
+# for i in range(ndim):
+#     quads_old = np.concatenate( [quads_old + 
+#         offset*np.eye(ndim)[i] for offset in offsets_old[i]] )
+#     quadWeights_old = np.concatenate(
+#         [quadWeights_old * weight for weight in weights_old[i]] )
+
+# phiX_old = quads_old[:,0] / (2*np.pi/NX)
+# Kdata_old = np.zeros(nMaxEntries)
+# Adata_old = np.zeros(nMaxEntries)
+# Mdata_old = np.zeros(nMaxEntries)
+# row_ind_old = np.zeros(nMaxEntries, dtype='int')
+# col_ind_old = np.zeros(nMaxEntries, dtype='int')
+
 # compute spatial discretizaton
 index = 0
-# grad = np.array([[-1/dx], [-1/dy]])
-phiX = quads[:,0] / dx
 for iPlane in range(NX):
-    thetaPlane = mapping(np.array([[iPlane*dx,0.5]]), theta=True)
-    mapL = mapping(quads + [iPlane*dx, 0], iPlane * dx)
-    mapR = mapping(quads + [iPlane*dx, 0], (iPlane+1) * dx)
-    indL = (mapL // dy).astype('int')
-    indR = (mapR // dy).astype('int')
-    phiLY = (mapL - indL*dy) / dy
-    phiRY = (mapR - indR*dy) / dy
-    grad = np.array([[-1/arcLengths[iPlane]], [-1/dy]])
-    grads = np.tile(grad, nQuads).T
-    # thetas = mapping(quads + iPlane*dx, theta=True)
-    # grads = np.apply_along_axis(lambda x: np.array(
-    #     [[np.cos(x[0]), -np.sin(x[0])], [np.sin(x[0]),  np.cos(x[0])]])
-    #     @ grad, 1, thetas.reshape(-1,1)).reshape(-1,2)
+    # generate quadrature points
+    offsets, weights = roots_legendre(Nquad)
+    offsets = [offsets * dx[iPlane] / 2, offsets / (2*NY)]
+    weights = [weights * dx[iPlane] / 2, weights / (2*NY)]
+    quads = ( np.indices([1, NY], dtype='float').T.reshape(-1, ndim) + 0.5 ) \
+          * [dx[iPlane], 1/NY]
+    quadWeights = np.repeat(1., len(quads))
+    for i in range(ndim):
+        quads = np.concatenate( [quads + 
+            offset*np.eye(ndim)[i] for offset in offsets[i]] )
+        quadWeights = np.concatenate(
+            [quadWeights * weight for weight in weights[i]] )
+    phiX = quads[:,0] / dx[iPlane]
+    mapL = mapping(quads + [nodeX[iPlane], 0], nodeX[iPlane])
+    mapR = mapping(quads + [nodeX[iPlane], 0], nodeX[iPlane+1])
+    indL = (np.searchsorted(nodeY[iPlane], mapL, side='right') - 1) % NY
+    indR = (np.searchsorted(nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
+    phiLY = (mapL - nodeY[iPlane][indL]) / dy[0][indL]
+    phiRY = (mapR - nodeY[iPlane][indR]) / dy[0][indR]
+    
+    # mapL_old = mapping(quads_old + [iPlane*2*np.pi/NX, 0], iPlane * 2*np.pi/NX)
+    # mapR_old = mapping(quads_old + [iPlane*2*np.pi/NX, 0], (iPlane+1) * 2*np.pi/NX)
+    # indL_old = (mapL_old // (1/NY)).astype('int')
+    # indR_old = (mapR_old // (1/NY)).astype('int')
+    # phiLY_old = (mapL_old - indL_old/NY) * NY
+    # phiRY_old = (mapR_old - indR_old/NY) * NY
+    # assert np.allclose(mapL, mapL_old)
+    # assert np.allclose(mapR, mapR_old)
+    # assert np.allclose(indL, indL_old)
+    # assert np.allclose(indR, indR_old)
+    # assert np.allclose(phiLY, phiLY_old)
+    # assert np.allclose(phiRY, phiRY_old)
+    # assert np.allclose(offsets, offsets_old)
+    # assert np.allclose(weights, weights_old)
+    # assert np.allclose(quads, quads_old)
+    # assert np.allclose(quadWeights, quadWeights_old)
+    # grad_old = np.array([[-1/arcLengths[iPlane]], [-NY]])
+    # grads = np.tile(grad_old, nQuads).T
+    
+    grad = np.array([-1/arcLengths[iPlane], -1/dy[0][0]])
     for iQ, quad in enumerate(quads):
         phis = np.array([[(1-phiLY[iQ]), (1-phiX[iQ])],
                          [  phiLY[iQ]  , (1-phiX[iQ])],
                          [(1-phiRY[iQ]),   phiX[iQ]  ],
                          [  phiRY[iQ]  ,   phiX[iQ]  ]])
-        gradphis = np.vstack((grads[iQ]          , grads[iQ] * [1, -1], 
-                              grads[iQ] * [-1, 1], grads[iQ] * [-1, -1])) * phis
-        # rotMat = np.array([[np.cos(thetas[iQ]), 0], [np.sin(thetas[iQ]), 1]])
-        # gradphis *= velocity
-        # gradphis = (rotMat @ gradphis.T).T
+        
+        # phis_old = np.array([[(1-phiLY_old[iQ]), (1-phiX_old[iQ])],
+        #                      [  phiLY_old[iQ]  , (1-phiX_old[iQ])],
+        #                      [(1-phiRY_old[iQ]),   phiX_old[iQ]  ],
+        #                      [  phiRY_old[iQ]  ,   phiX_old[iQ]  ]])
+        # assert np.allclose(phis, phis_old)
+        
+        gradphis = np.vstack((grad          , grad * [1, -1], 
+                              grad * [-1, 1], grad * [-1, -1])) * phis
         phis = np.prod(phis, axis=1)
         indices = np.array([indL[iQ] + NY*iPlane,
-                            (indL[iQ]+1) % NY + NY*iPlane,
-                            (indR[iQ] + NY*(iPlane+1)) % nNodes,
-                            ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
+                           (indL[iQ]+1) % NY + NY*iPlane,
+                           (indR[iQ] + NY*(iPlane+1)) % nNodes,
+                           ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
         Kdata[index:index+nEntries] = quadWeights[iQ] * \
                 np.ravel( gradphis @ (diffusivity @ gradphis.T) )
         Adata[index:index+nEntries] = ( quadWeights[iQ] *
-            # np.outer(np.sum(gradphis, axis=1), phis).ravel() )
             np.outer(np.dot(gradphis, velocity), phis).ravel() )
         Mdata[index:index+nEntries] = quadWeights[iQ] * \
             np.outer(phis, phis).ravel()
         row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
         col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
+        
+        # gradphis_old = np.vstack((grads[iQ]          , grads[iQ] * [1, -1], 
+        #                           grads[iQ] * [-1, 1], grads[iQ] * [-1, -1])) * phis_old
+        # phis_old = np.prod(phis_old, axis=1)
+        # indices_old = np.array([indL_old[iQ] + NY*iPlane,
+        #                        (indL_old[iQ]+1) % NY + NY*iPlane,
+        #                        (indR_old[iQ] + NY*(iPlane+1)) % nNodes,
+        #                        ((indR_old[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
+        # Kdata_old[index:index+nEntries] = quadWeights_old[iQ] * \
+        #         np.ravel( gradphis_old @ (diffusivity @ gradphis_old.T) )
+        # Adata_old[index:index+nEntries] = ( quadWeights_old[iQ] *
+        #     np.outer(np.dot(gradphis_old, velocity), phis_old).ravel() )
+        # Mdata_old[index:index+nEntries] = quadWeights_old[iQ] * \
+        #     np.outer(phis_old, phis_old).ravel()
+        # row_ind_old[index:index+nEntries] = np.repeat(indices_old, 2*ndim)
+        # col_ind_old[index:index+nEntries] = np.tile(indices_old, 2*ndim)
+        # assert np.allclose(phis, phis_old)
+        # assert np.allclose(gradphis, gradphis_old)
+        # assert np.allclose(indices, indices_old)
+        # assert np.allclose(Kdata, Kdata_old)
+        # assert np.allclose(Adata, Adata_old)
+        # assert np.allclose(Mdata, Mdata_old)
+        # assert np.allclose(row_ind, row_ind_old)
+        # assert np.allclose(col_ind, col_ind_old)
+        
         index += nEntries
 #         b[indices] += f(quad) * phis * quadWeights[iQ]
 K = sp.csr_matrix( (Kdata, (row_ind, col_ind)), shape=(nNodes, nNodes) )
@@ -138,19 +214,19 @@ K = M + K - A
 
 #set initial conditions
 u = np.zeros(nNodes)
-u[[8,46,60,70,71,92,93]] = 1
-# A = 1.0
-# rx = 2*dx
-# ry = 0.4
+# u[[8,46,60,70,71,92,93]] = 1
+# Amplitude = 1.0
+# rx = np.pi
+ry = 0.4
 # sigmax = 1.
-# sigmay = 0.1
-# for ix in range(NX):
-#     for iy in range(NY):
-#         px = ix*dx
-#         py = mapping(np.array([[px, iy*dy]]), 0)
-#         # u[ix*NY + iy] = A*np.exp( -0.5*( ((px - rx)/sigmax)**2
-#         #                                + ((py - ry)/sigmay)**2 ) ) # Gaussian
-#         u[ix*NY + iy] = (0.5*np.sin(ix*dx + np.pi/2) + 0.5) * np.exp( -0.5*( ((py - ry)/sigmay)**2 ) )
+sigmay = 0.1
+for ix in range(NX):
+    for iy in range(NY):
+        px = nodeX[ix]
+        py = mapping(np.array([[px, nodeY[ix][iy]]]), 0)
+        # u[ix*NY + iy] = Amplitude*np.exp( -0.5*( ((px - rx)/sigmax)**2
+        #                     + ((py - ry)/sigmay)**2 ) ) # Gaussian
+        u[ix*NY + iy] = (0.5*np.sin(nodeX[ix] + np.pi/2) + 0.5) * np.exp( -0.5*( ((py - ry)/sigmay)**2 ) )
 
 # minMax = np.empty((nSteps+1, 2))
 # minMax[0] = [0., 1.]
@@ -172,21 +248,23 @@ def step(nSteps=1):
         # minMax[i+1] = [np.min(u), np.max(u)]
 
 # generate plotting points
-nx = 50
-ny = 10
-points = np.indices((nx, NY*ny + 1), dtype='float').reshape(ndim, -1).T \
-        * [dx/nx, 1/(NY*ny)]
-nPoints = len(points)
+nx = 20
+ny = 3
+nPoints = nx*(NY*ny + 1)
 phiPlot = np.empty((nPoints*NX + NY*ny + 1, 4))
 indPlot = np.empty((nPoints*NX + NY*ny + 1, 4), dtype='int')
-phiX = points[:,0] / dx
+X = np.empty(0)
 for iPlane in range(NX):
-    mapL = mapping(points + [iPlane*dx, 0], iPlane * dx)
-    mapR = mapping(points + [iPlane*dx, 0], (iPlane+1) * dx)
-    indL = (mapL // dy).astype('int')
-    indR = (mapR // dy).astype('int')
-    phiLY = (mapL - indL*dy) / dy
-    phiRY = (mapR - indR*dy) / dy
+    points = np.indices((nx, NY*ny + 1), dtype='float').reshape(ndim, -1).T \
+           * [dx[iPlane]/nx, 1/(NY*ny)]
+    X = np.append(X, points[:,0] + nodeX[iPlane])
+    phiX = points[:,0] / dx[iPlane]
+    mapL = mapping(points + [nodeX[iPlane], 0], nodeX[iPlane])
+    mapR = mapping(points + [nodeX[iPlane], 0], nodeX[iPlane+1])
+    indL = (np.searchsorted(nodeY[iPlane], mapL, side='right') - 1) % NY
+    indR = (np.searchsorted(nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
+    phiLY = (mapL - nodeY[iPlane][indL]) / dy[0][indL]
+    phiRY = (mapR - nodeY[iPlane][indR]) / dy[0][indR]
     for iP, point in enumerate(points):
         phiPlot[iPlane*nPoints + iP] = [
             (1-phiLY[iP]) * (1-phiX[iP]), phiLY[iP] * (1-phiX[iP]),
@@ -200,8 +278,7 @@ for iPlane in range(NX):
 phiPlot[iPlane*nPoints + iP + 1:] = phiPlot[0:NY*ny + 1]
 indPlot[iPlane*nPoints + iP + 1:] = indPlot[0:NY*ny + 1]
 
-X = np.concatenate([points[:,0] + i*dx for i in range(NX)] + 
-                    [2*np.pi*np.ones(NY*ny + 1)])
+X = np.append(X, [2*np.pi*np.ones(NY*ny + 1)])
 Y = np.concatenate([np.tile(points[:,1], NX), points[0:NY*ny + 1,1]])
 U = np.sum(phiPlot * u[indPlot], axis=1)
 
@@ -230,6 +307,8 @@ def init_plot():
     plt.margins(0,0)
     return [field]
 
+step(nSteps)
+U = np.sum(phiPlot * u[indPlot], axis=1)
 init_plot()
 
 # field = ax.tripcolor(X, Y, U, shading='gouraud'
