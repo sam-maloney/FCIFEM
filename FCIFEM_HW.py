@@ -44,7 +44,7 @@ nNodes = NX * (NY-1)
 dx = nodeX[1:]-nodeX[0:-1]
 dy = nodeYfull[:,1:]-nodeYfull[:,:-1]
 
-alpha = 0.0    # Adiabaticity (~conductivity)
+alpha = 1.0    # Adiabaticity (~conductivity)
 kappa = 0.5    # Density gradient drive
 
 arcLengths = np.array([scipy.integrate.quad(lambda x: 
@@ -62,16 +62,16 @@ nQuads = NY * Nquad**2
 nMaxEntries = nEntries * nQuads * NX
 Kdata = np.zeros(nMaxEntries)
 Mdata = np.zeros(nMaxEntries)
-DDYdata = np.zeros(nMaxEntries)
-row_ind = np.zeros(nMaxEntries, dtype='int')
-col_ind = np.zeros(nMaxEntries, dtype='int')
+DDXdata = np.zeros(nMaxEntries)
+row_ind = np.zeros(nMaxEntries, dtype='int64')
+col_ind = np.zeros(nMaxEntries, dtype='int64')
 
 PBentries = (2*ndim)**3
 PBmaxEntries = PBentries * nQuads * NX
 PBdata = np.zeros(PBmaxEntries)
-PBind0 = np.zeros(PBmaxEntries, dtype='int')
-PBind1 = np.zeros(PBmaxEntries, dtype='int')
-PBind2 = np.zeros(PBmaxEntries, dtype='int')
+PBind0 = np.zeros(PBmaxEntries, dtype='int64')
+PBind1 = np.zeros(PBmaxEntries, dtype='int64')
+PBind2 = np.zeros(PBmaxEntries, dtype='int64')
 PBindex = 0
 
 ##### compute spatial discretizaton
@@ -118,8 +118,8 @@ for iPlane in range(NX):
             np.ravel( gradphis @ gradphis.T )
         Mdata[index:index+nEntries] = quadWeights[iQ] * \
             np.outer(phis, phis).ravel()
-        DDYdata[index:index+nEntries] = quadWeights[iQ] * \
-            np.outer(phis, gradphis[:,1]).ravel()
+        DDXdata[index:index+nEntries] = quadWeights[iQ] * \
+            np.outer(phis, gradphis[:,0]).ravel()
         row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
         col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
         index += nEntries
@@ -131,17 +131,31 @@ for iPlane in range(NX):
         PBind2[PBindex:PBindex+PBentries] = np.tile(indices, (2*ndim)**2)
         PBindex += PBentries
         
-K = sp.csr_matrix( (Kdata, (row_ind, col_ind)), shape=(nNodes, nNodes) )
-M = sp.csr_matrix( (Mdata, (row_ind, col_ind)), shape=(nNodes, nNodes) )
-DDY = sp.csr_matrix( (DDYdata, (row_ind, col_ind)), shape=(nNodes, nNodes) )
+ztol = 14 # number of decimal places at which to round to zero
+
+NZinds = np.flatnonzero(Kdata.round(decimals = ztol)) 
+K = sp.csr_matrix( (Kdata[NZinds], (row_ind[NZinds], col_ind[NZinds])),
+                   shape=(nNodes, nNodes) )
+
+NZinds = np.flatnonzero(Mdata.round(decimals = ztol)) 
+M = sp.csr_matrix( (Mdata[NZinds], (row_ind[NZinds], col_ind[NZinds])),
+                   shape=(nNodes, nNodes) )
+
+DDX = sp.csr_matrix( (DDXdata, (row_ind, col_ind)), shape=(nNodes, nNodes) )
+np.around(DDX.data, decimals = ztol, out = DDX.data)
+DDX.eliminate_zeros()
 
 PB = sparse.COO((PBind0, PBind1, PBind2), PBdata,
                 shape=(nNodes, nNodes, nNodes))
-NNZinds = np.flatnonzero(PB.data.round(decimals = 14))
-PB = sparse.COO(PB.coords[:,NNZinds], PB.data[NNZinds],
+NZinds = np.flatnonzero(PB.data.round(decimals = ztol))
+PB = sparse.COO(PB.coords[:,NZinds], PB.data[NZinds],
                 shape=(nNodes, nNodes, nNodes))
 
-DDY *= kappa
+# a = np.zeros(1)
+# PB = sparse.COO((a, a, a), a,
+#                 shape=(nNodes, nNodes, nNodes))
+
+DDX *= kappa
 K *= -1.
 
 ##### set initial conditions
@@ -165,10 +179,12 @@ for ix in range(NX):
 # betas = np.array([0.25, 1/3, 0.5, 1])
 
 sp_pot = sp.csc_matrix(np.ones((nNodes,1)))
+currentStep = 0
 
 def step(nSteps=1):
-    global pot, vort, n, K, M, DDY, PB, sp_pot
+    global pot, vort, n, K, M, DDX, PB, sp_pot, currentStep
     for i in range(nSteps):
+        currentStep += 1
         pot, info = sp_la.lgmres(K, M @ vort, x0=pot, tol=1e-10, atol=1e-10)
         if (info != 0):
             raise SystemExit(f'pot solution failed with error code: {info}')
@@ -176,7 +192,7 @@ def step(nSteps=1):
         sp_pot.data = pot
         PB2 = PB.dot(sp_pot).reshape((nNodes,nNodes)).to_scipy_sparse()
         ##### Backward-Euler #####
-        n, info = sp_la.lgmres(M*(alpha + 1/dt) + PB2, M/dt @ n + (M*alpha - DDY) @ pot, x0=n, tol=1e-10, atol=1e-10)
+        n, info = sp_la.lgmres(M*(alpha + 1/dt) + PB2, M/dt @ n + (M*alpha - DDX) @ pot, x0=n, tol=1e-10, atol=1e-10)
         if (info != 0):
             raise SystemExit(f'n solution failed with error code: {info}')
         vort, info = sp_la.lgmres(M/dt + PB2, M/dt @ vort + M*alpha @ (pot - n), x0=vort, tol=1e-10, atol=1e-10)
@@ -185,7 +201,7 @@ def step(nSteps=1):
         # ##### RK4 #####
         # uTemp = u
         # for beta in betas:
-        #     dudt, info = sp_la.cg(M, DDY @ uTemp, x0=dudt, tol=1e-10, atol=1e-10)
+        #     dudt, info = sp_la.cg(M, DDX @ uTemp, x0=dudt, tol=1e-10, atol=1e-10)
         #     # self.dudt = sp_la.spsolve(self.M, self.KA@uTemp)
         #     uTemp = u + beta * dt * dudt
         #     if (info != 0):
@@ -197,7 +213,7 @@ def step(nSteps=1):
 # ny = 3
 # nPoints = nx*(NY*ny + 1)
 # phiPlot = np.empty((nPoints*NX + NY*ny + 1, 4))
-# indPlot = np.empty((nPoints*NX + NY*ny + 1, 4), dtype='int')
+# indPlot = np.empty((nPoints*NX + NY*ny + 1, 4), dtype='int64')
 # X = np.empty(0)
 # for iPlane in range(NX):
 #     points = np.indices((nx, NY*ny + 1), dtype='float').reshape(ndim, -1).T \
@@ -231,7 +247,7 @@ X = np.repeat(nodeX, NY+1).reshape(NX+1, NY+1)
 Y = np.vstack((nodeYfull, nodeYfull[0]))
 
 def init_plot():
-    global field, fig, ax, X, Y, U, pot, vort, n, maxAbsU
+    global field, fig, ax, X, Y, U, pot, vort, n, maxAbsU, NX, NY
     fig, ax = plt.subplots()
     U = np.hstack((np.zeros((NX,1)), n.reshape(NX, NY-1), np.zeros((NX,1))))
     U = np.vstack((U, U[0]))
@@ -240,7 +256,7 @@ def init_plot():
     # field = ax.tripcolor(X.ravel(), Y.ravel(), U.ravel(), shading='gouraud'
     #                        ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
     #                       )
-    field = ax.contourf(X, Y, U, levels=np.linspace(-0.14, 0.14, 25))
+    field = ax.contourf(X, Y, U, levels=np.linspace(-2e-3, 2e-3, 25))
     # tri = mpl.tri.Triangulation(X,Y)
     # ax.triplot(tri, 'r-', lw=1)
     # x = np.linspace(0, nodeX[-1], 100)
@@ -272,9 +288,10 @@ init_plot()
 #                           )
 
 # def animate(i):
-#     global field, pot, vort, n
+#     global field, pot, vort, n, NX, NY, U
 #     step(1)
-#     U = np.concatenate((pot, pot[:NY-1], np.zeros(2*(NX+1))))
+#     U = np.hstack((np.zeros((NX,1)), n.reshape(NX, NY-1), np.zeros((NX,1))))
+#     U = np.vstack((U, U[0]))
 #     field.set_array(U)
 #     return [field]
 
