@@ -7,11 +7,13 @@ Created on Mon Jun  8 13:47:07 2020
 
 from scipy.special import roots_legendre
 from scipy.interpolate import RectBivariateSpline
+from scipy.fft import fft, fftshift, fftfreq
+import gc
+import sparse
 import scipy.integrate
 import scipy.sparse as sp
 import scipy.sparse.linalg as sp_la
 import numpy as np
-import sparse
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -22,12 +24,12 @@ def mapping(points, x=0., theta=False, deriv=False):
     else:
         return points[:,1]
 
-# ndoe
-
 ##### uniform grid spacing
-NX = 20  # number of planes
-NY = 20 # number of grid divisions on plane
-nodeX = np.arange(NX+1)/NX
+NX = 256 # number of planes
+NY = 128 # number of grid divisions on each plane
+sizeX = 10
+sizeY = 5
+nodeX = sizeX*np.arange(NX+1)/NX
 
 Nquad = 2
 ndim = 2
@@ -36,8 +38,8 @@ ndim = 2
 # nodeX = np.array([0., 1, 2.5, 3.5, 5, 2*np.pi])
 # NX = len(nodeX) - 1
 # NY = 20
-nodeYfull = np.tile(np.linspace(0, 1, NY+1), NX).reshape(NX,-1)
-nodeY = np.tile(np.linspace(1/NY, 1 - 1/NY, NY-1), NX).reshape(NX,-1)
+nodeYfull = sizeY*np.tile(np.linspace(0, 1, NY+1), NX).reshape(NX,-1)
+nodeY = sizeY*np.tile(np.linspace(1/NY, 1 - 1/NY, NY-1), NX).reshape(NX,-1)
 
 nNodes = NX * (NY-1)
 
@@ -55,6 +57,8 @@ dt = 1
 # nSteps = int(np.rint(np.sum(dx[0:3])/dt))
 # nSteps = int(np.pi/dt)
 nSteps = 127
+
+print('Computing spatial discretization... ', end='')
 
 ##### pre-allocate arrays for stiffness matrix triplets
 nEntries = (2*ndim)**2
@@ -79,10 +83,10 @@ index = 0
 for iPlane in range(NX):
     ##### generate quadrature points
     offsets, weights = roots_legendre(Nquad)
-    offsets = [offsets * dx[iPlane] / 2, offsets / (2*NY)]
-    weights = [weights * dx[iPlane] / 2, weights / (2*NY)]
+    offsets = [offsets * dx[iPlane] / 2, offsets * dy[iPlane,0] / 2]
+    weights = [weights * dx[iPlane] / 2, weights * dy[iPlane,0] / 2]
     quads = ( np.indices([1, NY], dtype='float').T.reshape(-1, ndim) + 0.5 ) \
-          * [dx[iPlane], 1/NY]
+          * [dx[iPlane], dy[iPlane,0]]
     quadWeights = np.repeat(1., len(quads))
     for i in range(ndim):
         quads = np.concatenate(
@@ -151,6 +155,9 @@ NZinds = np.flatnonzero(PB.data.round(decimals = ztol))
 PB = sparse.COO(PB.coords[:,NZinds], PB.data[NZinds],
                 shape=(nNodes, nNodes, nNodes))
 
+del row_ind, col_ind, PBind0, PBind1, PBind2, Kdata, Mdata, DDXdata, PBdata, NZinds
+gc.collect()
+
 # a = np.zeros(1)
 # PB = sparse.COO((a, a, a), a,
 #                 shape=(nNodes, nNodes, nNodes))
@@ -158,44 +165,47 @@ PB = sparse.COO(PB.coords[:,NZinds], PB.data[NZinds],
 DDX *= kappa
 K *= -1.
 
+print('complete\nSetting initial conditions... ', end='')
+
 ##### set initial conditions
-# u = np.zeros(nNodes)
-pot = np.zeros(nNodes)
-vort = np.zeros(nNodes)
-n = np.zeros(nNodes)
+t = 0
+pot = np.zeros((nSteps+1, nNodes))
+vort = np.zeros((nSteps+1, nNodes))
+n = np.zeros((nSteps+1, nNodes))
 
 nModes = int(NX/2)
 scale = 0.1 / nModes
 for ix in range(NX):
     for iy in range((NY-1)):
-        px = nodeX[ix]
-        py = mapping(np.array([[px, nodeY[ix][iy]]]), 0)
-        # vort[ix*(NY-1) + iy] = 0.1*np.sin(2*np.pi*px + np.pi/2)
+        px = nodeX[ix] / sizeX
+        py = mapping(np.array([[px, nodeY[ix][iy]]]), 0) / sizeY
+        # vort[0, ix*(NY-1) + iy] = 0.1*np.sin(2*np.pi*px + np.pi/2)
         for i in np.arange(1, nModes+1):
-             vort[ix*(NY-1) + iy] += scale * np.cos(i * 2 * np.pi * px)
+             vort[0, ix*(NY-1) + iy] += scale * np.cos(i * 2 * np.pi * px)
+pot[0], info = sp_la.lgmres(K, M @ vort[0], tol=1e-10, atol=1e-10)
 
 # ##### only used for RK4 time-stepping
 # dudt = np.zeros(nNodes)
 # betas = np.array([0.25, 1/3, 0.5, 1])
 
+print('complete\nBeginning simulation...')
+
 sp_pot = sp.csc_matrix(np.ones((nNodes,1)))
-currentStep = 0
 
 def step(nSteps=1):
-    global pot, vort, n, K, M, DDX, PB, sp_pot, currentStep
+    global pot, vort, n, K, M, DDX, PB, sp_pot, t
     for i in range(nSteps):
-        currentStep += 1
-        pot, info = sp_la.lgmres(K, M @ vort, x0=pot, tol=1e-10, atol=1e-10)
+        t += 1
+        print(f'\rt = {t}', end='')
+        pot[t], info = sp_la.lgmres(K, M @ vort[t-1], x0=pot[t-1], tol=1e-10, atol=1e-10)
         if (info != 0):
             raise SystemExit(f'pot solution failed with error code: {info}')
-        # PB2 = sparse.dot(PB, pot)
-        sp_pot.data = pot
-        PB2 = PB.dot(sp_pot).reshape((nNodes,nNodes)).to_scipy_sparse()
+        PB2 = sp.csr_matrix( (PB.data * pot[t][PB.coords[2]], (PB.coords[0], PB.coords[1])),  shape=(nNodes, nNodes) )
         ##### Backward-Euler #####
-        n, info = sp_la.lgmres(M*(alpha + 1/dt) + PB2, M/dt @ n + (M*alpha - DDX) @ pot, x0=n, tol=1e-10, atol=1e-10)
+        n[t], info = sp_la.lgmres(M*(alpha + 1/dt) + PB2, M/dt @ n[t-1] + (M*alpha - DDX) @ pot[t], x0=n[t-1], tol=1e-10, atol=1e-10)
         if (info != 0):
             raise SystemExit(f'n solution failed with error code: {info}')
-        vort, info = sp_la.lgmres(M/dt + PB2, M/dt @ vort + M*alpha @ (pot - n), x0=vort, tol=1e-10, atol=1e-10)
+        vort[t], info = sp_la.lgmres(M/dt + PB2, M/dt @ vort[t-1] + M*alpha @ (pot[t] - n[t]), x0=vort[t-1], tol=1e-10, atol=1e-10)
         if (info != 0):
             raise SystemExit(f'vort solution failed with error code: {info}')
         # ##### RK4 #####
@@ -208,55 +218,29 @@ def step(nSteps=1):
         #         print(f'solution failed with error code: {info}')
         # u = uTemp
 
-# # generate plotting points
-# nx = 20
-# ny = 3
-# nPoints = nx*(NY*ny + 1)
-# phiPlot = np.empty((nPoints*NX + NY*ny + 1, 4))
-# indPlot = np.empty((nPoints*NX + NY*ny + 1, 4), dtype='int64')
-# X = np.empty(0)
-# for iPlane in range(NX):
-#     points = np.indices((nx, NY*ny + 1), dtype='float').reshape(ndim, -1).T \
-#             * [dx[iPlane]/nx, 1/(NY*ny)]
-#     X = np.append(X, points[:,0] + nodeX[iPlane])
-#     phiX = points[:,0] / dx[iPlane]
-#     mapL = mapping(points + [nodeX[iPlane], 0], nodeX[iPlane])
-#     mapR = mapping(points + [nodeX[iPlane], 0], nodeX[iPlane+1])
-#     indL = (np.searchsorted(nodeY[iPlane], mapL, side='right') - 1) % NY
-#     indR = (np.searchsorted(nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
-#     phiLY = (mapL - nodeY[iPlane][indL]) / dy[0][indL]
-#     phiRY = (mapR - nodeY[iPlane][indR]) / dy[0][indR]
-#     for iP, point in enumerate(points):
-#         phiPlot[iPlane*nPoints + iP] = [
-#             (1-phiLY[iP]) * (1-phiX[iP]), phiLY[iP] * (1-phiX[iP]),
-#             (1-phiRY[iP]) * phiX[iP]    , phiRY[iP] * phiX[iP] ]
-#         indPlot[iPlane*nPoints + iP] = [
-#             indL[iP] + NY*iPlane,
-#             (indL[iP]+1) % NY + NY*iPlane,
-#             (indR[iP] + NY*(iPlane+1)) % nNodes,
-#             ((indR[iP]+1) % NY + NY*(iPlane+1)) % nNodes ]
-
-# phiPlot[iPlane*nPoints + iP + 1:] = phiPlot[0:NY*ny + 1]
-# indPlot[iPlane*nPoints + iP + 1:] = indPlot[0:NY*ny + 1]
-
-# X = np.append(X, [nodeX[-1] * np.ones(NY*ny + 1)])
-# Y = np.concatenate([np.tile(points[:,1], NX), points[0:NY*ny + 1,1]])
-# Vort = np.sum(phiPlot * vort[indPlot], axis=1)
+step(nSteps)
 
 X = np.repeat(nodeX, NY+1).reshape(NX+1, NY+1)
 Y = np.vstack((nodeYfull, nodeYfull[0]))
 
+plotType = 'contour'
+
 def init_plot():
-    global field, fig, ax, X, Y, U, pot, vort, n, maxAbsU, NX, NY
+    global field, fig, ax, X, Y, U, pot, vort, n, maxAbsU, NX, NY, plotType, t
     fig, ax = plt.subplots()
-    U = np.hstack((np.zeros((NX,1)), n.reshape(NX, NY-1), np.zeros((NX,1))))
+    U = np.hstack((np.zeros((NX,1)), n[t].reshape(NX, NY-1), np.zeros((NX,1))))
     U = np.vstack((U, U[0]))
-    maxAbsU = np.max(np.abs(U))
-    # maxAbsU = 0.1
-    # field = ax.tripcolor(X.ravel(), Y.ravel(), U.ravel(), shading='gouraud'
-    #                        ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
-    #                       )
-    field = ax.contourf(X, Y, U, levels=np.linspace(-2e-3, 2e-3, 25))
+    # maxAbsU = np.max(np.abs(U))
+    maxAbsU = 2e-3
+    if plotType.lower().startswith('t'):
+        field = ax.tripcolor(X.ravel(), Y.ravel(), U.ravel(), shading='gouraud'
+                             , cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
+                              )
+    elif plotType.lower().startswith('c'):
+        field = ax.contourf(X, Y, U, levels=np.linspace(-maxAbsU, maxAbsU, 25)
+                            # , cmap='seismic'
+                            , extend='both'
+                            )
     # tri = mpl.tri.Triangulation(X,Y)
     # ax.triplot(tri, 'r-', lw=1)
     # x = np.linspace(0, nodeX[-1], 100)
@@ -269,10 +253,10 @@ def init_plot():
     plt.xlabel(r'$x$')
     plt.ylabel(r'$y$', rotation=0)
     plt.margins(0,0)
+    plt.title(f't = {t}')
     return [field]
 
-step(nSteps)
-init_plot()
+# init_plot()
 
 # U_interp = RectBivariateSpline(X[:,0], Y[0], U)
 # x = np.arange(dx[0]/2, 1, dx[0])
@@ -288,20 +272,96 @@ init_plot()
 #                           )
 
 # def animate(i):
-#     global field, pot, vort, n, NX, NY, U
+#     global field, pot, vort, n, NX, NY, U, t
 #     step(1)
-#     U = np.hstack((np.zeros((NX,1)), n.reshape(NX, NY-1), np.zeros((NX,1))))
+#     U = np.hstack((np.zeros((NX,1)), n[t].reshape(NX, NY-1), np.zeros((NX,1))))
 #     U = np.vstack((U, U[0]))
-#     field.set_array(U)
+#     if plotType.lower().startswith('t'):
+#         field.set_array(U.ravel())
+#     elif plotType.lower().startswith('c'):
+#         ax.clear()
+#         field = ax.contourf(X, Y, U, levels=np.linspace(-maxAbsU, maxAbsU, 25))
+#         plt.title(f't = {t}')
 #     return [field]
 
 # ani = animation.FuncAnimation(
-#     fig, animate, frames=nSteps, interval=15)
+#     fig, animate, frames=nSteps, interval=60)
 
 # ani.save('movie.mp4', writer='ffmpeg', dpi=200)
 
+pot.shape = (nSteps+1, NX, NY-1)
+n.shape = (nSteps+1, NX, NY-1)
+vort.shape = (nSteps+1, NX, NY-1)
+
+pot_slice = pot[:,:,int(NY/2)-1]
+# n_slice = n[:,:,int(NY/2)-1]
+# vort_slice = vort[:,:,int(NY/2)-1]
+
+kxFreq = fftshift( fftfreq(NX, d=dx[0]) )
+
+# Take the spatial FFT
+Pot  = fftshift( fft( pot_slice, axis=1, norm="ortho"), axes=1 )
+# N    = fftshift( fft(   n_slice, axis=1, norm="ortho"), axes=1 )
+# Vort = fftshift( fft(vort_slice, axis=1, norm="ortho"), axes=1 )
+
+omega = fftshift( fftfreq(nSteps+1, d=dt) )
+
+# Take the temporal FFT
+PotOmega  = fftshift( fft( Pot, axis=0, norm="ortho"), axes=0 )
+# NOmega    = fftshift( fft(   N, axis=0, norm="ortho"), axes=0 )
+# VortOmega = fftshift( fft(Vort, axis=0, norm="ortho"), axes=0 )
+
+a = 10
+omegaR = -1/a*(a*kxFreq)/(1 + (a*kxFreq)**2)
+gamma = (a*kxFreq)**2*omegaR/(1+(a*kxFreq)**2)
+
+# Normalize to real part for each k_z
+for row in PotOmega.T:
+    row /= np.max(np.abs(np.real(row)))
+    # print(np.max(np.abs(np.real(row))))
+
+plt.subplot(1,2,1)
+# plt.contourf(kxFreq, omega, np.real(PotOmega))
+plt.imshow(np.real(PotOmega), interpolation='bilinear', origin='lower',
+            extent=(kxFreq[0], kxFreq[-1], omega[0], omega[-1]), aspect='auto')
+plt.plot(kxFreq, omegaR, 'r')
+plt.title(r'real($\omega$)')
+plt.ylabel(r'$\omega_R$')
+plt.xlabel(r'$k_x$')
+plt.xlim(-5, 5)
+plt.ylim(-0.1, 0.1)
+plt.colorbar(shrink=0.8)
+
+# Normalize to imaginary part for each k_z
+for row in PotOmega.T:
+    row /= np.max(np.abs(np.imag(row)))
+    # print(np.max(np.abs(np.imag(row))))
+
+plt.subplot(1,2,2)
+plt.imshow(np.imag(PotOmega), interpolation='bilinear', origin='lower',
+            extent=(kxFreq[0], kxFreq[-1], omega[0], omega[-1]), aspect='auto')
+plt.plot(kxFreq, gamma, 'r')
+plt.title(r'imag($\omega$)')
+plt.ylabel(r'$\gamma$')
+plt.xlabel(r'$k_x$')
+plt.xlim(-5, 5)
+plt.ylim(-0.1, 0.1)
+plt.colorbar(shrink=0.8)
+
 plt.show()
 
-# print(f'nSteps = {nSteps}')
-# print(f'max(u) = {np.max(u)}')
-# print(f'min(u) = {np.min(u)}')
+# temp = np.zeros((nSteps+1, NX+1, NY+1))
+
+# temp[:,0:NX,1:NY] = pot
+# temp[:,-1,1:NY] = pot[:,0,:]
+# pot = temp
+
+# temp[:,0:NX,1:NY] = n
+# temp[:,-1,1:NY] = n[:,0,:]
+# n = temp
+
+# temp[:,0:NX,1:NY] = vort
+# temp[:,-1,1:NY] = vort[:,0,:]
+# vort = temp
+
+# del temp
