@@ -122,8 +122,8 @@ for iPlane in range(NX):
           * [dx[iPlane], 1/NY]
     quadWeights = np.repeat(1., len(quads))
     for i in range(ndim):
-        quads = np.concatenate( [quads + 
-            offset*np.eye(ndim)[i] for offset in offsets[i]] )
+        quads = np.concatenate( 
+            [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
         quadWeights = np.concatenate(
             [quadWeights * weight for weight in weights[i]] )
     phiX = quads[:,0] / dx[iPlane]
