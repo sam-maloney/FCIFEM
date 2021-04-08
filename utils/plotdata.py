@@ -14,7 +14,7 @@ def plotdata(data, x=None, y=None,
              title=None, xtitle=None, ytitle=None,
              output=None, range=None,
              fill=True, mono=False, colorbar=True,
-             xerr=None, yerr=None):
+             xerr=None, yerr=None, **kwargs):
     """Plot 1D or 2D data, with a variety of options."""
     
     size = data.shape
@@ -42,11 +42,18 @@ def plotdata(data, x=None, y=None,
         
         if fill:
             #plt.contourf(data, colors=colors)
-            cmap=None
+            cmap=kwargs.get('cmap', None)
             if mono: cmap = cm.gray
-            plt.imshow(data.T, interpolation='bilinear', cmap=cmap,
-                       origin='lower',
-                       extent=(np.min(x), np.max(x), np.min(y), np.max(y)))
+            xoffset = (np.max(x) - np.min(x)) / (2*(data.shape[0]-1))
+            yoffset = (np.max(y) - np.min(y)) / (2*(data.shape[1]-1))
+            plt.imshow(data.T, cmap=cmap,
+                       interpolation=kwargs.get('interpolation', 'bilinear'),
+                       origin=kwargs.get('origin', 'lower'),
+                       extent=(np.min(x) - xoffset, np.max(x) + xoffset,
+                               np.min(y) - yoffset, np.max(y) + yoffset),
+                       **kwargs)
+            plt.xlim(np.min(x), np.max(x))
+            plt.ylim(np.min(y), np.max(y))
         else:
             colors = None
             if mono: colors = 'k'

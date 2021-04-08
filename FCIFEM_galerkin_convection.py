@@ -14,59 +14,62 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-def mapping(points, x=0., theta=False, deriv=False):
-    A = 0.2
-    phase = -np.pi/2
-    if deriv:
-        return A*np.cos(points[:,0] - phase)
-    elif theta:
-        return np.arctan(A*np.cos(points[:,0] - phase))
-    else:
-        offsets = points[:,1] - A*np.sin(points[:,0] - phase)
-        return (A*np.sin(x - phase) + offsets) % 1 % 1
+import fcifem
+
+mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
 
 # mapping(np.array([[9*np.pi/6, 0.1]]), 4*np.pi/3)
 
 def f(points):
-    return np.repeat(0., len(points))
+    return np.repeat(0., len(points.reshape(-1,2)))
 
-##### uniform grid spacing
-# NX = 5  # number of planes
-# NY = 20 # number of grid divisions on plane
-# nodeX = 2*np.pi*np.arange(NX+1)/NX
+##### uniform X spacing
+NX = 5  # number of planes
+nodeX = 2*np.pi*np.arange(NX+1)/NX
 
-Nquad = 20
-ndim = 2
+# ##### non-uniform X spacing
+# nodeX = np.array([0., 1, 2.5, 3.5, 5, 2*np.pi])
+# NX = len(nodeX) - 1
 
-##### non-uniform X spacing
-nodeX = np.array([0., 1, 2.5, 3.5, 5, 2*np.pi])
-NX = len(nodeX) - 1
 NY = 20
-nodeY = np.tile(np.linspace(0, 1, NY+1), NX).reshape(NX,-1)
+nodeY = np.tile(np.linspace(0, 1, NY+1), NX+1).reshape(NX+1,-1)
+
+# # Add random perturbation for non-uniform Y spacing
+# perturbation = 0.25/NY
+# seed = 42
+# rng = np.random.Generator(np.random.PCG64(seed))
+# nodeY[:-1,1:-1] += rng.uniform(-perturbation, perturbation, nodeY[:-1,1:-1].shape)
+# nodeY[-1] = nodeY[0]
+
+# # Plot nodes
+# plt.plot(np.repeat(nodeX[0:-1],NY+1).reshape(NX,NY+1),nodeY,'.')
 
 nNodes = NX*NY
 
 dx = nodeX[1:]-nodeX[0:-1]
 dy = nodeY[:,1:]-nodeY[:,:-1]
 
+Nquad = 20
+ndim = 2
+
 # velocity = np.array([1., 0.])
-velocity = np.array([1., 0.03183098861837907])
+velocity = np.array([2*np.pi, 0.1])
 # velocity = np.array([0., 0.])
 
 D_a = 0.
 D_i = 0.
-theta = np.pi/4
+theta = np.pi
 diffusivity = D_a*np.array([[np.cos(theta)**2, np.sin(theta)*np.cos(theta)],
                             [np.sin(theta)*np.cos(theta), np.sin(theta)**2]])
 diffusivity += D_i*np.eye(2)
 
-arcLengths = np.array([scipy.integrate.quad(lambda x: 
-    np.sqrt(1 + mapping(np.array([[x,0]]), deriv=True)**2),
-    nodeX[i], nodeX[i+1])[0] for i in range(NX)])
+# arcLengths = np.array([scipy.integrate.quad(lambda x: 
+#     np.sqrt(1 + mapping.deriv(np.array([[x,0]]))**2),
+#     nodeX[i], nodeX[i+1])[0] for i in range(NX)])
 
-dt = 0.01
+dt = 0.005
 # nSteps = int(np.rint(np.sum(dx[0:3])/dt))
-nSteps = int(np.pi/dt)
+nSteps = int(1/dt+10)
 
 # ##### generate quadrature points
 # offsets, weights = roots_legendre(Nquad)
@@ -90,7 +93,7 @@ Adata = np.zeros(nMaxEntries)
 Mdata = np.zeros(nMaxEntries)
 row_ind = np.zeros(nMaxEntries, dtype='int')
 col_ind = np.zeros(nMaxEntries, dtype='int')
-b = np.zeros(nNodes)
+# b = np.zeros(nNodes)
 
 # offsets_old, weights_old = roots_legendre(Nquad)
 # offsets_old = [offsets_old * np.pi / NX, offsets_old / (2*NY)]
@@ -111,6 +114,8 @@ b = np.zeros(nNodes)
 # row_ind_old = np.zeros(nMaxEntries, dtype='int')
 # col_ind_old = np.zeros(nMaxEntries, dtype='int')
 
+u_weights = np.zeros(nNodes)
+
 ##### compute spatial discretizaton
 index = 0
 for iPlane in range(NX):
@@ -130,9 +135,9 @@ for iPlane in range(NX):
     mapL = mapping(quads + [nodeX[iPlane], 0], nodeX[iPlane])
     mapR = mapping(quads + [nodeX[iPlane], 0], nodeX[iPlane+1])
     indL = (np.searchsorted(nodeY[iPlane], mapL, side='right') - 1) % NY
-    indR = (np.searchsorted(nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
-    phiLY = (mapL - nodeY[iPlane][indL]) / dy[0][indL]
-    phiRY = (mapR - nodeY[iPlane][indR]) / dy[0][indR]
+    indR = (np.searchsorted(nodeY[iPlane + 1], mapR, side='right') - 1)%NY
+    phiLY = (mapL - nodeY[iPlane][indL]) / dy[iPlane][indL]
+    phiRY = (mapR - nodeY[iPlane + 1][indR]) / dy[iPlane + 1][indR]
     
     # mapL_old = mapping(quads_old + [iPlane*2*np.pi/NX, 0], iPlane * 2*np.pi/NX)
     # mapR_old = mapping(quads_old + [iPlane*2*np.pi/NX, 0], (iPlane+1) * 2*np.pi/NX)
@@ -153,7 +158,7 @@ for iPlane in range(NX):
     # grad_old = np.array([[-1/arcLengths[iPlane]], [-NY]])
     # grads = np.tile(grad_old, nQuads).T
     
-    grad = np.array([-1/arcLengths[iPlane], -1/dy[0][0]])
+    # grad = np.array([-1/arcLengths[iPlane], -1/dy[0][0]])
     for iQ, quad in enumerate(quads):
         phis = np.array([[(1-phiLY[iQ]), (1-phiX[iQ])],
                          [  phiLY[iQ]  , (1-phiX[iQ])],
@@ -166,21 +171,34 @@ for iPlane in range(NX):
         #                      [  phiRY_old[iQ]  ,   phiX_old[iQ]  ]])
         # assert np.allclose(phis, phis_old)
         
-        gradphis = np.vstack((grad          , grad * [1, -1], 
-                              grad * [-1, 1], grad * [-1, -1])) * phis
+        # gradphis = np.vstack((grad          , grad * [1, -1], 
+        #                       grad * [-1, 1], grad * [-1, -1])) * phis
+        
+        # # Gradients along the mapping direction
+        # gradL = np.array([-1/arcLengths[iPlane], -1/dy[iPlane][indL[iQ]]])
+        # gradR = np.array([ 1/arcLengths[iPlane], -1/dy[iPlane + 1][indR[iQ]]])
+        
+        # Gradients along the coordinate direction
+        gradL = np.array([-1/dx[iPlane], -1/dy[iPlane][indL[iQ]]])
+        gradR = np.array([ 1/dx[iPlane], -1/dy[iPlane + 1][indR[iQ]]])
+        
+        gradphis = np.vstack((gradL, gradL * [1, -1], 
+                              gradR, gradR * [1, -1])) * phis
         phis = np.prod(phis, axis=1)
         indices = np.array([indL[iQ] + NY*iPlane,
                            (indL[iQ]+1) % NY + NY*iPlane,
                            (indR[iQ] + NY*(iPlane+1)) % nNodes,
                            ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
-        Kdata[index:index+nEntries] = quadWeights[iQ] * \
-                np.ravel( gradphis @ (diffusivity @ gradphis.T) )
+        Kdata[index:index+nEntries] = ( quadWeights[iQ] * 
+            np.ravel( gradphis @ (diffusivity @ gradphis.T) ) )
         Adata[index:index+nEntries] = ( quadWeights[iQ] *
-            np.outer(phis, np.dot(gradphis, velocity)).ravel() )
-        Mdata[index:index+nEntries] = quadWeights[iQ] * \
-            np.outer(phis, phis).ravel()
+            np.outer(np.dot(gradphis, velocity), phis).ravel() )
+        Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
+            np.outer(phis, phis).ravel() )
         row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
         col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
+        
+        u_weights[indices] += quadWeights[iQ] * phis
         
         # gradphis_old = np.vstack((grads[iQ]          , grads[iQ] * [1, -1], 
         #                           grads[iQ] * [-1, 1], grads[iQ] * [-1, -1])) * phis_old
@@ -212,33 +230,54 @@ K = sp.csr_matrix( (Kdata, (row_ind, col_ind)), shape=(nNodes, nNodes) )
 A = sp.csr_matrix( (Adata, (row_ind, col_ind)), shape=(nNodes, nNodes) )
 M = sp.csr_matrix( (Mdata, (row_ind, col_ind)), shape=(nNodes, nNodes) )
 
+# # Mass-lumped matrix
+# M = sp.diags(u_weights, format='csr')
+
+# # For debugging
+# KA = K.A
+# AA = A.A
+# MA = M.A
+
+# Ad = A.diagonal()
+# A = 0.5*(A-A.T)
+# A.setdiag(Ad)
+
+# u_weights = np.sum(M, axis=1)
+# u_weights = M.diagonal()
+
 # Backward-Euler
 M /= dt
-K = M + K + A
+K = M + K - A
 
-#set initial conditions
+# Set initial conditions
 u = np.zeros(nNodes)
+exact_solution = np.zeros(nNodes)
 # u[[8,46,60,70,71,92,93]] = 1
 # Amplitude = 1.0
 # rx = np.pi
 ry = 0.4
 # sigmax = 1.
 sigmay = 0.1
+pi_2 = 0.5*np.pi
 for ix in range(NX):
     for iy in range(NY):
         px = nodeX[ix]
         py = mapping(np.array([[px, nodeY[ix][iy]]]), 0)
         # u[ix*NY + iy] = Amplitude*np.exp( -0.5*( ((px - rx)/sigmax)**2
         #                     + ((py - ry)/sigmay)**2 ) ) # Gaussian
-        u[ix*NY + iy] = (0.5*np.sin(px + np.pi/2) + 0.5) * np.exp( -0.5*( ((py - ry)/sigmay)**2 ) )
+        u[ix*NY + iy] = 0.5*(np.sin(px + pi_2) + 1) * np.exp(-0.5*((py - ry)/sigmay)**2)
+        exact_solution[ix*NY + iy] = 0.5*(np.sin(px + pi_2) + 1) * np.exp(-0.5*((py - (ry+0.1))/sigmay)**2)
 
 # minMax = np.empty((nSteps+1, 2))
 # minMax[0] = [0., 1.]
 dudt = np.zeros(nNodes)
 betas = np.array([0.25, 1/3, 0.5, 1])
 
+U_sum = []
+error = []
+
 def step(nSteps=1):
-    global u, K, M
+    global u, K, M, U_sum, u_weights, exact_solution
     for i in range(nSteps):
         # uTemp = u
         # for beta in betas:
@@ -250,6 +289,8 @@ def step(nSteps=1):
         # u = uTemp
         u, info = sp_la.lgmres(K, M @ u, u, tol=1e-10, atol=1e-10) # Backward-Euler
         # minMax[i+1] = [np.min(u), np.max(u)]
+        U_sum.append(np.sum(u*u_weights))
+        error.append(np.linalg.norm(u - exact_solution))
 
 # generate plotting points
 nx = 20
@@ -267,8 +308,8 @@ for iPlane in range(NX):
     mapR = mapping(points + [nodeX[iPlane], 0], nodeX[iPlane+1])
     indL = (np.searchsorted(nodeY[iPlane], mapL, side='right') - 1) % NY
     indR = (np.searchsorted(nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
-    phiLY = (mapL - nodeY[iPlane][indL]) / dy[0][indL]
-    phiRY = (mapR - nodeY[iPlane][indR]) / dy[0][indR]
+    phiLY = (mapL - nodeY[iPlane][indL]) / dy[iPlane][indL]
+    phiRY = (mapR - nodeY[iPlane + 1][indR]) / dy[iPlane + 1][indR]
     for iP, point in enumerate(points):
         phiPlot[iPlane*nPoints + iP] = [
             (1-phiLY[iP]) * (1-phiX[iP]), phiLY[iP] * (1-phiX[iP]),
@@ -311,7 +352,7 @@ def init_plot():
     plt.margins(0,0)
     return [field]
 
-# step(nSteps)
+step(nSteps)
 U = np.sum(phiPlot * u[indPlot], axis=1)
 init_plot()
 
@@ -319,15 +360,15 @@ init_plot()
 #                           ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
 #                           )
 
-def animate(i):
-    global field, U, u, phiPlot, indPlot
-    step(1)
-    U = np.sum(phiPlot * u[indPlot], axis=1)
-    field.set_array(U)
-    return [field]
+# def animate(i):
+#     global field, U, u, phiPlot, indPlot
+#     step(1)
+#     U = np.sum(phiPlot * u[indPlot], axis=1)
+#     field.set_array(U)
+#     return [field]
 
-ani = animation.FuncAnimation(
-    fig, animate, frames=nSteps, interval=15)
+# ani = animation.FuncAnimation(
+#     fig, animate, frames=nSteps, interval=15)
 
 # ani.save('movie.mp4', writer='ffmpeg', dpi=200)
 

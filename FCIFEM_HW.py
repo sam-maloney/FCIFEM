@@ -4,10 +4,6 @@ Created on Mon Jun  8 13:47:07 2020
 
 @author: samal
 """
-# import sys
-# sys.path.append('C:\\Users\\samal\\Documents\\School\\Warwick\\BOUT')
-# from boututils.plotdata import plotdata
-# from boututils.showdata import showdata
 from utils.plotdata import plotdata
 from utils.showdata import showdata
 
@@ -22,7 +18,6 @@ import scipy.sparse.linalg as sp_la
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-# import matplotlib.animation as animation
 
 def mapping(points, x=0., theta=False, deriv=False):
     if deriv or theta:
@@ -37,15 +32,15 @@ Nquad = 2
 ndim = 2
 
 alpha = 1.0    # Adiabaticity (~conductivity)
-kappa = 0.5    # Density gradient drive
+kappa = 0.0    # Density gradient drive
 
 YBC = 'p' # 'dirichlet' or 'periodic' (or 'd' and 'p')
 if not (YBC.lower().startswith('d') or YBC.lower().startswith('p')):
-    raise SystemExit(f'Unknown y boundary condition: {YBC}')
+    raise SystemExit(f"Unknown y boundary condition: '{YBC}'")
 
 ##### uniform grid spacing
-NX = 128 # number of planes
-NY = 128 # number of grid divisions on each plane
+NX = 100 # number of planes
+NY = 100 # number of grid divisions on each plane
 sizeX = 5
 sizeY = 5
 nodeX = sizeX*np.arange(NX+1)/NX
@@ -57,9 +52,11 @@ nodeY = sizeY*np.tile(np.linspace(0, 1, NY+1), NX+1).reshape(NX+1,-1)
 # nodeY = sizeY*np.tile(np.linspace(0, 1, NY+1), NX).reshape(NX,-1)
 
 if YBC.lower().startswith('d'):
-    nNodes = NX * (NY-1)
+    nYNodes = NY-1
 elif YBC.lower().startswith('p'):
-    nNodes = NX * NY
+    nYNodes = NY
+
+nNodes = NX * nYNodes
 
 dx = nodeX[1:]-nodeX[0:-1]
 dy = nodeY[:,1:]-nodeY[:,:-1]
@@ -107,9 +104,9 @@ for iPlane in range(NX):
     mapL = mapping(quads + [nodeX[iPlane], 0], nodeX[iPlane])
     mapR = mapping(quads + [nodeX[iPlane], 0], nodeX[iPlane+1])
     indL = (np.searchsorted(nodeY[iPlane], mapL, side='right') - 1) % NY
-    indR = (np.searchsorted(nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
-    phiLY = (mapL - nodeY[iPlane][indL]) / dy[iPlane][indL]
-    phiRY = (mapR - nodeY[iPlane][indR]) / dy[iPlane][indR]
+    indR = (np.searchsorted(nodeY[iPlane+1], mapR, side='right') - 1) % NY
+    phiLY = (mapL - nodeY[iPlane,indL]) / dy[iPlane,indL]
+    phiRY = (mapR - nodeY[iPlane,indR]) / dy[iPlane,indR]
     
     grad = np.array([-1/arcLengths[iPlane], -1/dy[iPlane][0]])
     for iQ, quad in enumerate(quads):
@@ -118,10 +115,10 @@ for iPlane in range(NX):
                          [(1-phiRY[iQ]),   phiX[iQ]  ],
                          [  phiRY[iQ]  ,   phiX[iQ]  ]])
         if YBC.lower().startswith('d'):
-            indices = np.array([indL[iQ] - 1 + (NY-1)*iPlane,
-                                indL[iQ] + (NY-1)*iPlane,
-                               (indR[iQ] - 1 + (NY-1)*(iPlane+1)) % nNodes,
-                               (indR[iQ] + (NY-1)*(iPlane+1)) % nNodes])
+            indices = np.array([ indL[iQ] - 1 + (NY-1)*iPlane,
+                                 indL[iQ] + (NY-1)*iPlane,
+                                (indR[iQ] - 1 + (NY-1)*(iPlane+1)) % nNodes,
+                                (indR[iQ] + (NY-1)*(iPlane+1)) % nNodes])
             BC = np.array([[indL[iQ] != 0],
                            [indL[iQ] != NY-1],
                            [indR[iQ] != 0],
@@ -190,23 +187,18 @@ pot = np.zeros((nSteps+1, nNodes))
 vort = np.zeros((nSteps+1, nNodes))
 n = np.zeros((nSteps+1, nNodes))
 
-if YBC.lower().startswith('d'):
-    nYNodes = NY-1
-elif YBC.lower().startswith('p'):
-    nYNodes = NY
-
 nModes = int(NX/2)
 scale = 0.1 / nModes
 for ix in range(NX):
     for iy in range(nYNodes):
-        px = nodeX[ix] / sizeX
+        px = 2 * np.pi * nodeX[ix] / sizeX
         if YBC.lower().startswith('d'):
-            py = mapping(np.array([[px, nodeY[ix][iy+1]]]), 0) / sizeY
+            py = 2 * np.pi * mapping(np.array([[px, nodeY[ix][iy+1]]]), 0)[0] / sizeY
         elif YBC.lower().startswith('p'):
-            py = mapping(np.array([[px, nodeY[ix][iy]]]), 0) / sizeY
-        # vort[0, ix*(NY-1) + iy] = 0.1*np.sin(2*np.pi*px + np.pi/2)
-        for i in np.arange(1, nModes+1):
-             vort[0, ix*(NY-1) + iy] += scale * np.cos(i * 2 * np.pi * px)
+            py = 2 * np.pi * mapping(np.array([[px, nodeY[ix][iy]]]), 0)[0] / sizeY
+        vort[0, ix*nYNodes + iy] = 0.1*(np.sin(2*px) + np.sin(3*py))
+        # for i in np.arange(1, nModes+1):
+        #       vort[0, ix*nYNodes + iy] += scale * np.cos(i * px)
 pot[0], info = sp_la.lgmres(K, M @ vort[0], tol=1e-10, atol=1e-10)
 
 # ##### only used for RK4 time-stepping
@@ -215,10 +207,8 @@ pot[0], info = sp_la.lgmres(K, M @ vort[0], tol=1e-10, atol=1e-10)
 
 print('complete\nBeginning simulation...')
 
-sp_pot = sp.csc_matrix(np.ones((nNodes,1)))
-
 def step(nSteps=1):
-    global pot, vort, n, K, M, DDX, PB, sp_pot, t
+    global pot, vort, n, K, M, DDX, PB, t
     for i in range(nSteps):
         t += 1
         print(f'\rt = {t}', end='')
@@ -274,63 +264,64 @@ vort = temp.copy()
 
 del temp
 
-plotdata(n[-1], x=X, y=Y)
+# plotdata(n[-1], x=X, y=Y)
 
-# showdata(n, x=X, y=Y, title='n', hold_aspect=True, movie='n.mp4')
+# showdata(pot, x=X, y=Y, titles='pot', hold_aspect=True, movie='pot.mp4')
+# showdata(n, x=X, y=Y, titles='n', hold_aspect=True, movie='n.mp4')
+# showdata(vort, x=X, y=Y, titles='vort', hold_aspect=True, movie='vort.mp4')
 
-# pot_slice = pot[:,:-1,int(NY/2)]
-# # n_slice = n[:,:-1,int(NY/2)]
-# # vort_slice = vort[:,:-1,int(NY/2)]
+##### Plot dispersion relation #####
 
-# kxFreq = fftshift( fftfreq(NX, d=dx[0]) )
+normalize = False
 
-# # Take the spatial FFT
-# Pot  = fftshift( fft( pot_slice, axis=1, norm="ortho"), axes=1 )
-# # N    = fftshift( fft(   n_slice, axis=1, norm="ortho"), axes=1 )
-# # Vort = fftshift( fft(vort_slice, axis=1, norm="ortho"), axes=1 )
+pot_slice = pot[:,:-1,int(NY/2)]
+# n_slice = n[:,:-1,int(NY/2)]
+# vort_slice = vort[:,:-1,int(NY/2)]
 
-# omega = fftshift( fftfreq(nSteps+1, d=dt) )
+kxFreq = fftshift( fftfreq(NX, d=dx[0]) )
 
-# # Take the temporal FFT
-# PotOmega  = fftshift( fft( Pot, axis=0, norm="ortho"), axes=0 )
-# # NOmega    = fftshift( fft(   N, axis=0, norm="ortho"), axes=0 )
-# # VortOmega = fftshift( fft(Vort, axis=0, norm="ortho"), axes=0 )
+# Take the spatial FFT
+Pot  = fftshift( fft( pot_slice, axis=1, norm="ortho"), axes=1 )
+# N    = fftshift( fft(   n_slice, axis=1, norm="ortho"), axes=1 )
+# Vort = fftshift( fft(vort_slice, axis=1, norm="ortho"), axes=1 )
 
-# a = 10
-# omegaR = (-1/a)*(a*kxFreq)/(1 + (a*kxFreq)**2)
-# gamma = (a*kxFreq)**2*omegaR/(1+(a*kxFreq)**2)
+# showdata(np.abs(Pot), x=kxFreq, titles='Pot', hold_aspect=True, movie='PotF.mp4')
+# showdata(np.abs(Vort), x=kxFreq, titles='Vort', hold_aspect=True, movie='VortF.mp4')
+# showdata(np.abs(N), x=kxFreq, titles='N', hold_aspect=True, movie='NF.mp4')
 
-# # Normalize to real part for each k_z
-# for row in PotOmega.T:
-#     row /= np.max(np.abs(np.real(row)))
-#     # print(np.max(np.abs(np.real(row))))
+omega = fftshift( fftfreq(nSteps+1, d=dt) )
 
-# plt.subplot(1,2,1)
-# # plt.contourf(kxFreq, omega, np.real(PotOmega))
-# plt.imshow(np.real(PotOmega), interpolation='bilinear', origin='lower',
-#             extent=(kxFreq[0], kxFreq[-1], omega[0], omega[-1]), aspect='auto')
-# plt.plot(kxFreq, omegaR, 'r')
-# plt.title(r'real($\omega$)')
-# plt.ylabel(r'$\omega_R$')
-# plt.xlabel(r'$k_x$')
-# plt.xlim(-5, 5)
-# plt.ylim(-0.1, 0.1)
-# plt.colorbar(shrink=0.8)
+# Take the temporal FFT
+PotOmega  = fftshift( fft( Pot, axis=0, norm="ortho"), axes=0 )
+# NOmega    = fftshift( fft(   N, axis=0, norm="ortho"), axes=0 )
+# VortOmega = fftshift( fft(Vort, axis=0, norm="ortho"), axes=0 )
 
-# # Normalize to imaginary part for each k_z
-# for row in PotOmega.T:
-#     row /= np.max(np.abs(np.imag(row)))
-#     # print(np.max(np.abs(np.imag(row))))
+a = 10
+omegaR = (-1/a)*(a*kxFreq)/(1 + (a*kxFreq)**2)
+gamma = (a*kxFreq)**2*omegaR/(1+(a*kxFreq)**2)
 
-# plt.subplot(1,2,2)
-# plt.imshow(np.imag(PotOmega), interpolation='bilinear', origin='lower',
-#             extent=(kxFreq[0], kxFreq[-1], omega[0], omega[-1]), aspect='auto')
-# plt.plot(kxFreq, gamma, 'r')
-# plt.title(r'imag($\omega$)')
-# plt.ylabel(r'$\gamma$')
-# plt.xlabel(r'$k_x$')
-# plt.xlim(-5, 5)
-# plt.ylim(-0.1, 0.1)
-# plt.colorbar(shrink=0.8)
+# Normalize to real part for each k_x
+if normalize:
+    for row in PotOmega.T:
+        row /= np.max(np.abs(np.real(row)))
 
-# plt.show()
+plt.subplot(1,2,1)
+plotdata(np.real(PotOmega).T, x=kxFreq, y=omega, aspect='auto',
+          title=r'real($\omega$)', xtitle=r'$k_x$', ytitle=r'$\gamma$')
+plt.plot(kxFreq, omegaR, 'r')
+plt.xlim(-5, 5)
+plt.ylim(-0.1, 0.1)
+
+# Normalize to imaginary part for each k_x
+if normalize:
+    for row in PotOmega.T:
+        row /= np.max(np.abs(np.imag(row)))
+
+plt.subplot(1,2,2)
+plotdata(np.imag(PotOmega).T, x=kxFreq, y=omega, aspect='auto',
+          title=r'imag($\omega$)', xtitle=r'$k_x$', ytitle=r'$\gamma$')
+plt.plot(kxFreq, gamma, 'r')
+plt.xlim(-5, 5)
+plt.ylim(-0.1, 0.1)
+
+plt.show()

@@ -159,6 +159,8 @@ def showdata(vars, titles=[], legendlabels=[], surf=[], polar=[], tslice=0, t_ar
             vars[i] = [vars[i]]
 
     # Sort out titles
+    if not isinstance(titles, list):
+        titles = [titles]
     if len(titles) == 0:
         for i in range(0,Nvar):
             titles.append(('Var' + str(i+1)))
