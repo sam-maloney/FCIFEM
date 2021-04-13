@@ -139,7 +139,7 @@ class FciFemSim(metaclass=ABCMeta):
         Spacing between nodes on each FCI plane (includes right boundary).
     nNodes : int
         Number of unique nodal points in the simulation domain (equals NX*NY).
-    velocity : np.array([vx,vy,vz], dtype='float64')
+    velocity : np.array([vx,vy], dtype='float64')
         Background velocity of the fluid.
     diffusivity : {numpy.ndarray, float}
         Diffusion coefficient for the quantity of interest.
@@ -171,11 +171,11 @@ class FciFemSim(metaclass=ABCMeta):
             Must be an object derived from fcifem.Mapping.
         dt : float
             Time interval between each successive timestep.
-        u0 : {numpy.ndarray, function object}
+        u0 : {numpy.ndarray, callable}
             Initial conditions for the simulation.
-            Must be an array of shape (self.nNodes,) or a function returning
-            such an array and taking as input the array of (x,y) node
-            coordinates with shape ({self.nNodes}, 2).
+            Must be an array of shape (self.nNodes,) or a callable object
+            returning such an array and taking as input the array of node
+            coordinates with shape (self.nNodes, self.ndim).
         velocity : np.array([vx, vy], dtype='float')
             Background velocity of the fluid.
         diffusivity : {numpy.ndarray, float}, optional
@@ -211,6 +211,7 @@ class FciFemSim(metaclass=ABCMeta):
         self.time = 0.0
         self.timestep = 0
         self.Nquad = Nquad
+        self.mapping = mapping
         self.velocity = velocity
         if isinstance(diffusivity, np.ndarray):
             self.diffusivity = diffusivity
@@ -219,8 +220,8 @@ class FciFemSim(metaclass=ABCMeta):
             if self.diffusivity.shape != (self.ndim, self.ndim):
                 self.diffusivity = diffusivity * np.eye(self.ndim, dtype='float')
         if self.diffusivity.shape != (self.ndim,self.ndim):
-            raise SystemExit("diffusivity must be (or be convertible to) a "
-                             "numpy.ndarray with shape (2, 2}).")
+            raise SystemExit(f"diffusivity must be (or be convertible to) a "
+                f"numpy.ndarray with shape ({self.ndim}, {self.ndim}).")
         rng = np.random.Generator(np.random.PCG64(seed))
         if "nodeX" in kwargs:
             self.nodeX = kwargs["nodeX"]
@@ -238,17 +239,40 @@ class FciFemSim(metaclass=ABCMeta):
         if f is None:
             self.f = lambda x: np.repeat(0., len(x.reshape(-1, self.ndim)))
         self.setInitialConditions(u0)
-        self.mapping = mapping
     
     def setInitialConditions(self, u0):
         """Initialize the nodal coefficients for the given IC.
+        
+        Parameters
+        ----------
+        u0 : {numpy.ndarray, callable}
+            Initial conditions for the simulation.
+            Must be an array of shape (self.nNodes,) or a callable object
+            returning such an array and taking as input the array of node
+            coordinates with shape (self.nNodes, self.ndim).
 
         Returns
         -------
         None.
 
         """
-        self.u0 = u0
+        if isinstance(u0, np.ndarray) and u0.shape == (self.nNodes,):
+            self.u = u0.copy()
+            self.u0 = u0
+            self.u0func = None
+        elif callable(u0):
+            self.u0func = u0
+            self.nodes = np.vstack( (np.repeat(self.nodeX[:-1], self.NY),
+                                self.nodeY[:-1,:-1].ravel()) ).T
+            self.nodesMapped = self.nodes.copy()
+            self.nodesMapped[:,1] = self.mapping(self.nodes, 0)
+            self.u = u0(self.nodesMapped)
+            self.u0 = self.u.copy()
+        else:
+            SystemExit(f"u0 must be an array of shape ({self.nNodes},) or a "
+                f"callable object returning such an array and taking as input "
+                f"the array of node coordinates with shape "
+                f"({self.nNodes}, {self.ndim}).")
         
     def computeSpatialDiscretization(self):
         """Assemble the system discretization matrices K, A, M in CSR format.
@@ -262,39 +286,50 @@ class FciFemSim(metaclass=ABCMeta):
         None.
 
         """
+        ndim = self.ndim
+        nNodes = self.nNodes
+        NX = self.NX
+        NY = self.NY
         # pre-allocate arrays for stiffness matrix triplets
-        nEntries = (2*self.ndim)**2
-        nQuads = self.NY*self.Nquad**2
-        nMaxEntries = nEntries * nQuads * self.NX
+        nEntries = (2*ndim)**2
+        nQuads = NY*self.Nquad**2
+        nMaxEntries = nEntries * nQuads * NX
         Kdata = np.zeros(nMaxEntries)
         Adata = np.zeros(nMaxEntries)
         Mdata = np.zeros(nMaxEntries)
         row_ind = np.zeros(nMaxEntries, dtype='int')
         col_ind = np.zeros(nMaxEntries, dtype='int')
-        self.b = np.zeros(self.nNodes)
-        self.u_weights = np.zeros(self.nNodes)
+        self.b = np.zeros(nNodes)
+        self.u_weights = np.zeros(nNodes)
+        
+        # # For gradients along the mapping direction, needs scipy.integrate
+        # arcLengths = np.array([scipy.integrate.quad(lambda x: 
+        #     np.sqrt(1 + self.mapping.deriv(np.array([[x,0]]))**2),
+        #     self.nodeX[i], self.nodeX[i+1])[0] for i in range(NX)])
         
         ##### compute spatial discretizaton
         index = 0
-        for iPlane in range(self.NX):
+        for iPlane in range(NX):
+            dx = self.dx[iPlane]
+            nodeX = self.nodeX[iPlane]
             ##### generate quadrature points
             offsets, weights = roots_legendre(self.Nquad)
-            offsets = [offsets * self.dx[iPlane] / 2, offsets / (2*self.NY)]
-            weights = [weights * self.dx[iPlane] / 2, weights / (2*self.NY)]
-            quads = ( np.indices([1, self.NY], dtype='float').T.
-                      reshape(-1, self.ndim) + 0.5 ) \
-                    * [self.dx[iPlane], 1/self.NY]
+            offsets = [offsets * dx / 2, offsets / (2*NY)]
+            weights = [weights * dx / 2, weights / (2*NY)]
+            quads = ( np.indices([1, NY], dtype='float').T.
+                      reshape(-1, ndim) + 0.5 ) \
+                    * [dx, 1/NY]
             quadWeights = np.repeat(1., len(quads))
-            for i in range(self.ndim):
+            for i in range(ndim):
                 quads = np.concatenate( 
-                    [quads + offset*np.eye(self.ndim)[i] for offset in offsets[i]] )
+                    [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
-            phiX = quads[:,0] / self.dx[iPlane]
-            mapL = self.mapping(quads + [self.nodeX[iPlane], 0], self.nodeX[iPlane])
-            mapR = self.mapping(quads + [self.nodeX[iPlane], 0], self.nodeX[iPlane+1])
-            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % self.NY
-            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % self.NY
+            phiX = quads[:,0] / dx
+            mapL = self.mapping(quads + [nodeX, 0], nodeX)
+            mapR = self.mapping(quads + [nodeX, 0], self.nodeX[iPlane+1])
+            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
+            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) / self.dy[iPlane][indL]
             phiRY = (mapR - self.nodeY[iPlane + 1][indR]) / self.dy[iPlane + 1][indR]
             
@@ -309,24 +344,24 @@ class FciFemSim(metaclass=ABCMeta):
                 # gradR = np.array([ 1/arcLengths[iPlane], -1/dy[iPlane + 1][indR[iQ]]])
                 
                 # Gradients along the coordinate direction
-                gradL = np.array([-1/self.dx[iPlane], -1/self.dy[iPlane][indL[iQ]]])
-                gradR = np.array([ 1/self.dx[iPlane], -1/self.dy[iPlane + 1][indR[iQ]]])
+                gradL = np.array([-1/dx, -1/self.dy[iPlane][indL[iQ]]])
+                gradR = np.array([ 1/dx, -1/self.dy[iPlane + 1][indR[iQ]]])
                 
                 gradphis = np.vstack((gradL, gradL * [1, -1], 
                                       gradR, gradR * [1, -1])) * phis
                 phis = np.prod(phis, axis=1)
-                indices = np.array([indL[iQ] + self.NY*iPlane,
-                                    (indL[iQ]+1) % self.NY + self.NY*iPlane,
-                                    (indR[iQ] + self.NY*(iPlane+1)) % self.nNodes,
-                                    ((indR[iQ]+1) % self.NY + self.NY*(iPlane+1)) % self.nNodes])
+                indices = np.array([indL[iQ] + NY*iPlane,
+                                    (indL[iQ]+1) % NY + NY*iPlane,
+                                    (indR[iQ] + NY*(iPlane+1)) % nNodes,
+                                    ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
                 Kdata[index:index+nEntries] = ( quadWeights[iQ] * 
                     np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
                 Adata[index:index+nEntries] = ( quadWeights[iQ] *
                     np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
                 Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
                     np.outer(phis, phis).ravel() )
-                row_ind[index:index+nEntries] = np.repeat(indices, 2*self.ndim)
-                col_ind[index:index+nEntries] = np.tile(indices, 2*self.ndim)
+                row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
+                col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
                 
                 self.u_weights[indices] += quadWeights[iQ] * phis
                 
@@ -334,189 +369,171 @@ class FciFemSim(metaclass=ABCMeta):
                 self.b[indices] += self.f(quad) * phis * quadWeights[iQ]
         
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
-                                shape=(self.nNodes, self.nNodes) )
+                                shape=(nNodes, nNodes) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
-                                shape=(self.nNodes, self.nNodes) )
+                                shape=(nNodes, nNodes) )
         self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
-                                shape=(self.nNodes, self.nNodes) )
+                                shape=(nNodes, nNodes) )
+        
+        # # Mass-lumped matrix
+        # self.M = sp.diags(self.u_weights, format='csr')
+        
+        # Backward-Euler
+        self.M /= self.dt
+        self.R = self.M + self.K - self.A
+        self.P = None
     
-    # def step(self, nSteps = 1, **kwargs):
-    #     """Advance the simulation a given number of timesteps.
+    def precondition(self, preconditioner='ilu', P=None):
+        """Generate and/or store the preconditioning matrix P.
 
-    #     Parameters
-    #     ----------
-    #     nSteps : int, optional
-    #         Number of timesteps to compute. The default is 1.
-    #     **kwargs
-    #         Used to specify optional arguments passed to the linear solver.
-    #         Note that kwargs["M"] will be overwritten, use self.precon(...)
-    #         instead to generate or specify a preconditioner.
+        Parameters
+        ----------
+        preconditioner : {string, None}, optional
+            Which preconditioning method to use. If P is not given, then it
+            must be one of 'jacobi', 'ilu', or None. If P is given, then any
+            string can be given as the name for P; if None is given, it will
+            default to 'user_defined'. The default is 'ilu'.
+        P : {scipy.sparse.linalg.LinearOperator, None}, optional
+            Used to directly specifiy the linear operator to be used.
+            The default is None.
 
-    #     Returns
-    #     -------
-    #     None.
+        Returns
+        -------
+        None.
 
-    #     """
-    #     kwargs["M"] = self.P
-    #     info = 0
-    #     betas = np.array([0.25, 1/3, 0.5, 1]) ## RK4 ##
-    #     # betas = np.array([1.]) ## Forward Euler ##
-    #     for i in range(nSteps):
-    #         uTemp = self.uI
-    #         for beta in betas:
-    #             self.dudt, info = sp_la.cg(self.M, self.KA@uTemp,
-    #                                        x0=self.dudt, **kwargs)
-    #             # self.dudt = sp_la.spsolve(self.M, self.KA@uTemp)
-    #             uTemp = self.uI + beta*self.dt*self.dudt
-    #             if (info != 0):
-    #                 print(f'solution failed with error code: {info}')
-    #         self.uI = uTemp
-    #         self.timestep += 1
-    #     self.time = self.timestep * self.dt
+        """
+        self.preconditioner = preconditioner
+        if P != None:
+            self.P = P
+            if self.preconditioner == None:
+                self.preconditioner = 'user_defined'
+            return
+        if self.preconditioner == None:
+            self.P = None
+        elif preconditioner.lower() == 'ilu':
+            ilu = sp_la.spilu(self.R)
+            self.P = sp_la.LinearOperator(self.R.shape, lambda x: ilu.solve(x))
+        elif preconditioner.lower() == 'jacobi':
+            self.P = sp_la.inv( sp.diags( self.R.diagonal(), format='csc',
+                                          dtype='float64' ) )
+        else:
+            print(f"Error: unkown preconditioner '{preconditioner}'. "
+                  f"Must be one of 'ilu' or 'jacobi' (or None). "
+                  f"Defaulting to None.")
+    
+    def step(self, nSteps = 1, **kwargs):
+        """Advance the simulation a given number of timesteps.
+
+        Parameters
+        ----------
+        nSteps : int, optional
+            Number of timesteps to compute. The default is 1.
+        **kwargs
+            Used to specify optional arguments passed to the linear solver.
+            Note that kwargs["M"] will be overwritten, use self.precon(...)
+            instead to generate or specify a preconditioner.
+
+        Returns
+        -------
+        None.
+
+        """
+        kwargs["M"] = self.P
+        # info = 0
+        # betas = np.array([0.25, 1/3, 0.5, 1]) ## RK4 ##
+        # # betas = np.array([1.]) ## Forward Euler ##
+        # for i in range(nSteps):
+        #     uTemp = self.uI
+        #     for beta in betas:
+        #         self.dudt, info = sp_la.cg(self.M, self.KA@uTemp,
+        #                                     x0=self.dudt, **kwargs)
+        #         # self.dudt = sp_la.spsolve(self.M, self.KA@uTemp)
+        #         uTemp = self.uI + beta*self.dt*self.dudt
+        #         if (info != 0):
+        #             print(f'solution failed with error code: {info}')
+        #     self.uI = uTemp
+        #     self.timestep += 1
+        # self.time = self.timestep * self.dt
+        
+        for i in range(nSteps):
+            # uTemp = u
+            # for beta in betas:
+            #     dudt, info = sp_la.lgmres(M, A @ uTemp, x0=dudt, **kwargs)
+            #     # self.dudt = sp_la.spsolve(self.M, self.KA@uTemp)
+            #     uTemp = u + beta * dt * dudt
+            #     if (info != 0):
+            #         print(f'solution failed with error code: {info}')
+            # u = uTemp
+            self.timestep += 1
+            self.u, info = sp_la.lgmres(self.R, self.M @ self.u, self.u,
+                                        **kwargs) # Backward-Euler
+            if (info != 0):
+                    print(f'TS {self.timestep}: solution failed with error '
+                          f'code {info}')
+        self.time = self.timestep * self.dt
 
 
-# # # Mass-lumped matrix
-# # M = sp.diags(u_weights, format='csr')
+    def generatePlottingPoints(self, nx=20, ny=3):
+        """Generate set of interpolation points to use for plotting.
 
-# # # For debugging
-# # KA = K.A
-# # AA = A.A
-# # MA = M.A
+        Parameters
+        ----------
+        nx : int, optional
+            Number of points per grid division in the x-direction.
+            The default is 20.
+        ny : int, optional
+            Number of points per grid division in the y-direction.
+            The default is 3.
 
-# # Ad = A.diagonal()
-# # A = 0.5*(A-A.T)
-# # A.setdiag(Ad)
+        Returns
+        -------
+        None.
 
-# # u_weights = np.sum(M, axis=1)
-# # u_weights = M.diagonal()
+        """
+        NX = self.NX
+        NY = self.NY
+        nNodes = self.nNodes
+        nPointsPerPlane = nx*(NY*ny + 1)
+        nPointsTotal = nPointsPerPlane*NX + NY*ny + 1
+        self.phiPlot = np.empty((nPointsTotal, 4))
+        self.indPlot = np.empty((nPointsTotal, 4), dtype='int')
+        self.X = np.empty(0)
+        for iPlane in range(NX):
+            dx = self.dx[iPlane]
+            nodeX = self.nodeX[iPlane]
+            points = np.indices((nx, NY*ny + 1), dtype='float') \
+                .reshape(self.ndim, -1).T * [dx/nx, 1/(NY*ny)]
+            self.X = np.append(self.X, points[:,0] + nodeX)
+            phiX = points[:,0] / dx
+            mapL = self.mapping(points + [nodeX, 0], nodeX)
+            mapR = self.mapping(points + [nodeX, 0], self.nodeX[iPlane+1])
+            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
+            indR = (np.searchsorted(self.nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
+            phiLY = (mapL - self.nodeY[iPlane][indL]) / self.dy[iPlane][indL]
+            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) / self.dy[iPlane + 1][indR]
+            for iP, point in enumerate(points):
+                self.phiPlot[iPlane*nPointsPerPlane + iP] = [
+                    (1-phiLY[iP]) * (1-phiX[iP]), phiLY[iP] * (1-phiX[iP]),
+                    (1-phiRY[iP]) * phiX[iP]    , phiRY[iP] * phiX[iP] ]
+                self.indPlot[iPlane*nPointsPerPlane + iP] = [
+                    indL[iP] + NY*iPlane,
+                    (indL[iP]+1) % NY + NY*iPlane,
+                    (indR[iP] + NY*(iPlane+1)) % nNodes,
+                    ((indR[iP]+1) % NY + NY*(iPlane+1)) % nNodes ]
+        
+        self.phiPlot[iPlane*nPointsPerPlane + iP + 1:] = self.phiPlot[0:NY*ny + 1]
+        self.indPlot[iPlane*nPointsPerPlane + iP + 1:] = self.indPlot[0:NY*ny + 1]
+        
+        self.X = np.append(self.X, [2*np.pi*np.ones(NY*ny + 1)])
+        self.Y = np.concatenate([np.tile(points[:,1], NX), points[0:NY*ny + 1,1]])
+        self.U = np.sum(self.phiPlot * self.u[self.indPlot], axis=1)
+    
+    def computePlottingSolution(self):
+        """Compute interpolated solution at the plotting points.
 
-# # Backward-Euler
-# M /= dt
-# K = M + K - A
+        Returns
+        -------
+        None.
 
-# # Set initial conditions
-# u = np.zeros(nNodes)
-# exact_solution = np.zeros(nNodes)
-# # u[[8,46,60,70,71,92,93]] = 1
-# # Amplitude = 1.0
-# # rx = np.pi
-# ry = 0.4
-# # sigmax = 1.
-# sigmay = 0.1
-# pi_2 = 0.5*np.pi
-# for ix in range(NX):
-#     for iy in range(NY):
-#         px = nodeX[ix]
-#         py = mapping(np.array([[px, nodeY[ix][iy]]]), 0)
-#         # u[ix*NY + iy] = Amplitude*np.exp( -0.5*( ((px - rx)/sigmax)**2
-#         #                     + ((py - ry)/sigmay)**2 ) ) # Gaussian
-#         u[ix*NY + iy] = 0.5*(np.sin(px + pi_2) + 1) * np.exp(-0.5*((py - ry)/sigmay)**2)
-#         exact_solution[ix*NY + iy] = 0.5*(np.sin(px + pi_2) + 1) * np.exp(-0.5*((py - (ry+0.1))/sigmay)**2)
-
-# # minMax = np.empty((nSteps+1, 2))
-# # minMax[0] = [0., 1.]
-# dudt = np.zeros(nNodes)
-# betas = np.array([0.25, 1/3, 0.5, 1])
-
-# U_sum = []
-# error = []
-
-# def step(nSteps=1):
-#     global u, K, M, U_sum, u_weights, exact_solution
-#     for i in range(nSteps):
-#         # uTemp = u
-#         # for beta in betas:
-#         #     dudt, info = sp_la.lgmres(M, A @ uTemp, x0=dudt, tol=1e-10, atol=1e-10)
-#         #     # self.dudt = sp_la.spsolve(self.M, self.KA@uTemp)
-#         #     uTemp = u + beta * dt * dudt
-#         #     if (info != 0):
-#         #         print(f'solution failed with error code: {info}')
-#         # u = uTemp
-#         u, info = sp_la.lgmres(K, M @ u, u, tol=1e-10, atol=1e-10) # Backward-Euler
-#         # minMax[i+1] = [np.min(u), np.max(u)]
-#         U_sum.append(np.sum(u*u_weights))
-#         error.append(np.linalg.norm(u - exact_solution))
-
-# # generate plotting points
-# nx = 20
-# ny = 3
-# nPoints = nx*(NY*ny + 1)
-# phiPlot = np.empty((nPoints*NX + NY*ny + 1, 4))
-# indPlot = np.empty((nPoints*NX + NY*ny + 1, 4), dtype='int')
-# X = np.empty(0)
-# for iPlane in range(NX):
-#     points = np.indices((nx, NY*ny + 1), dtype='float').reshape(ndim, -1).T \
-#            * [dx[iPlane]/nx, 1/(NY*ny)]
-#     X = np.append(X, points[:,0] + nodeX[iPlane])
-#     phiX = points[:,0] / dx[iPlane]
-#     mapL = mapping(points + [nodeX[iPlane], 0], nodeX[iPlane])
-#     mapR = mapping(points + [nodeX[iPlane], 0], nodeX[iPlane+1])
-#     indL = (np.searchsorted(nodeY[iPlane], mapL, side='right') - 1) % NY
-#     indR = (np.searchsorted(nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
-#     phiLY = (mapL - nodeY[iPlane][indL]) / dy[iPlane][indL]
-#     phiRY = (mapR - nodeY[iPlane + 1][indR]) / dy[iPlane + 1][indR]
-#     for iP, point in enumerate(points):
-#         phiPlot[iPlane*nPoints + iP] = [
-#             (1-phiLY[iP]) * (1-phiX[iP]), phiLY[iP] * (1-phiX[iP]),
-#             (1-phiRY[iP]) * phiX[iP]    , phiRY[iP] * phiX[iP] ]
-#         indPlot[iPlane*nPoints + iP] = [
-#             indL[iP] + NY*iPlane,
-#             (indL[iP]+1) % NY + NY*iPlane,
-#             (indR[iP] + NY*(iPlane+1)) % nNodes,
-#             ((indR[iP]+1) % NY + NY*(iPlane+1)) % nNodes ]
-
-# phiPlot[iPlane*nPoints + iP + 1:] = phiPlot[0:NY*ny + 1]
-# indPlot[iPlane*nPoints + iP + 1:] = indPlot[0:NY*ny + 1]
-
-# X = np.append(X, [2*np.pi*np.ones(NY*ny + 1)])
-# Y = np.concatenate([np.tile(points[:,1], NX), points[0:NY*ny + 1,1]])
-# U = np.sum(phiPlot * u[indPlot], axis=1)
-
-# # maxAbsU = np.max(np.abs(U))
-# maxAbsU = 1.
-
-# def init_plot():
-#     global field, fig, ax, X, Y, U, maxAbsU
-#     fig, ax = plt.subplots()
-#     field = ax.tripcolor(X, Y, U, shading='gouraud'
-#                          ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
-#                          )
-#     # tri = mpl.tri.Triangulation(X,Y)
-#     # ax.triplot(tri, 'r-', lw=1)
-#     x = np.linspace(0, 2*np.pi, 100)
-#     for yi in [0.4, 0.5, 0.6]:
-#         ax.plot(x, [mapping(np.array([[0, yi]]), i) for i in x], 'k')
-#     for xi in nodeX:
-#         ax.plot([xi, xi], [0, 1], 'k:')
-#     # ax.plot(X[np.argmax(U)], Y[np.argmax(U)],  'g+', markersize=10)
-#     plt.colorbar(field)
-#     plt.xlabel(r'$x$')
-#     plt.ylabel(r'$y$', rotation=0)
-#     plt.xticks(np.linspace(0, 2*np.pi, 7), 
-#         ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
-#     plt.margins(0,0)
-#     return [field]
-
-# step(nSteps)
-# U = np.sum(phiPlot * u[indPlot], axis=1)
-# init_plot()
-
-# # field = ax.tripcolor(X, Y, U, shading='gouraud'
-# #                           ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
-# #                           )
-
-# # def animate(i):
-# #     global field, U, u, phiPlot, indPlot
-# #     step(1)
-# #     U = np.sum(phiPlot * u[indPlot], axis=1)
-# #     field.set_array(U)
-# #     return [field]
-
-# # ani = animation.FuncAnimation(
-# #     fig, animate, frames=nSteps, interval=15)
-
-# # ani.save('movie.mp4', writer='ffmpeg', dpi=200)
-
-# print(f'nSteps = {nSteps}')
-# print(f'max(u) = {np.max(u)}')
-# print(f'min(u) = {np.min(u)}')
+        """
+        self.U = np.sum(self.phiPlot * self.u[self.indPlot], axis=1)

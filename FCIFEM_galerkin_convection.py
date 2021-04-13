@@ -356,19 +356,19 @@ step(nSteps)
 U = np.sum(phiPlot * u[indPlot], axis=1)
 init_plot()
 
-# field = ax.tripcolor(X, Y, U, shading='gouraud'
-#                           ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
-#                           )
+field = ax.tripcolor(X, Y, U, shading='gouraud'
+                          ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
+                          )
 
-# def animate(i):
-#     global field, U, u, phiPlot, indPlot
-#     step(1)
-#     U = np.sum(phiPlot * u[indPlot], axis=1)
-#     field.set_array(U)
-#     return [field]
+def animate(i):
+    global field, U, u, phiPlot, indPlot
+    step(1)
+    U = np.sum(phiPlot * u[indPlot], axis=1)
+    field.set_array(U)
+    return [field]
 
-# ani = animation.FuncAnimation(
-#     fig, animate, frames=nSteps, interval=15)
+ani = animation.FuncAnimation(
+    fig, animate, frames=nSteps, interval=15)
 
 # ani.save('movie.mp4', writer='ffmpeg', dpi=200)
 
