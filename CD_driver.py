@@ -13,6 +13,7 @@ import matplotlib.animation as animation
 from timeit import default_timer
 
 import fcifem
+from integrators import *
 
 mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
 
@@ -28,7 +29,7 @@ diffusivity = D_a*np.array([[np.cos(theta)**2, np.sin(theta)*np.cos(theta)],
 diffusivity += D_i*np.eye(2)
 
 dt = 0.005
-t_final = 0.5
+t_final = 0.25
 # nSteps = int(np.rint(np.sum(dx[0:3])/dt))
 nSteps = int(np.rint(t_final/dt))
 
@@ -80,7 +81,7 @@ tolerance = 1e-10
 
 # allocate arrays for convergence testing
 start = 2
-stop = 6
+stop = 2
 nSamples = stop - start + 1
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int32')
 E_inf = np.empty(nSamples, dtype='float64')
@@ -102,7 +103,7 @@ for iN, NX in enumerate(NX_array):
 
     # Assemble the stiffness matrix and solve for the approximate solution
     sim.computeSpatialDiscretization()
-    # sim.precondition()
+    sim.initializeTimeIntegrator('RK', 'ilu')
     sim.step(nSteps, tol=tolerance, atol=tolerance)
     
     # compute the analytic solution and error norms
@@ -113,7 +114,7 @@ for iN, NX in enumerate(NX_array):
     
     end_time = default_timer()
     
-    # print('Condition Number =', mlsSim.cond('fro', False))
+    # print('Condition Number =', sim.cond('fro'))
     
     print('max error =', E_inf[iN])
     print('L2 error  =', E_2[iN])
@@ -137,36 +138,6 @@ print(f'min(E_2)   = {np.min(E_2)}')
     
 ##### Begin Plotting Routines #####
 
-sim.generatePlottingPoints()
-
-# maxAbsU = np.max(np.abs(sim.U))
-maxAbsU = 1.
-
-def init_plot():
-    global field, fig, ax, sim, maxAbsU
-    fig, ax = plt.subplots()
-    field = ax.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud'
-                          ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
-                          )
-    # tri = mpl.tri.Triangulation(sim.X,sim.Y)
-    # ax.triplot(tri, 'r-', lw=1)
-    x = np.linspace(0, sim.nodeX[-1], 100)
-    for yi in [0.4, 0.5, 0.6]:
-        ax.plot(x, [mapping(np.array([[0, yi]]), i) for i in x], 'k')
-    for xi in sim.nodeX:
-        ax.plot([xi, xi], [0, 1], 'k:')
-    # ax.plot(sim.X[np.argmax(sim.U)], sim.Y[np.argmax(sim.U)],
-    #   'g+', markersize=10)
-    plt.colorbar(field)
-    plt.xlabel(r'$x$')
-    plt.ylabel(r'$y$', rotation=0)
-    plt.xticks(np.linspace(0, 2*np.pi, 7), 
-        ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
-    plt.margins(0,0)
-    return [field]
-
-# init_plot()
-
 # clear the current figure, if opened, and set parameters
 fig = plt.gcf()
 fig.clf()
@@ -186,7 +157,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 
 # # plot the result
 # plt.subplot(121)
-# plt.tripcolor(mlsSim.nodes[:,0], mlsSim.nodes[:,1], mlsSim.u, shading='gouraud')
+# plt.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u, shading='gouraud')
 # plt.colorbar()
 # plt.xlabel(r'$x$')
 # plt.ylabel(r'$y$', rotation=0)
@@ -195,7 +166,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 
 # # plot analytic solution
 # plt.subplot(222)
-# plt.tripcolor(mlsSim.nodes[:,0], mlsSim.nodes[:,1], u_exact, shading='gouraud')
+# plt.tripcolor(sim.nodes[:,0], sim.nodes[:,1], u_exact, shading='gouraud')
 # plt.colorbar()
 # plt.xlabel(r'$x$')
 # plt.ylabel(r'$y$')
@@ -240,10 +211,10 @@ intraN = np.logspace(start+0.5, stop-0.5, num=nSamples-1, base=2.0)
 plt.plot(intraN, order_inf, '.:', linewidth=1, label=r'$E_\infty$ order')
 plt.plot(intraN, order_2, '.:', linewidth=1, label=r'$E_2$ order')
 plt.plot(plt.xlim(), [2, 2], 'k:', linewidth=1, label='Expected')
-# plt.ylim(1, 3)
-# plt.yticks([1, 1.5, 2, 2.5, 3])
-plt.ylim(0, 3)
-plt.yticks([0, 0.5, 1, 1.5, 2, 2.5, 3])
+plt.ylim(0, 5)
+plt.yticks(np.linspace(0,5,6))
+# plt.ylim(0, 3)
+# plt.yticks([0, 0.5, 1, 1.5, 2, 2.5, 3])
 plt.ylabel(r'Intra-step Order of Convergence')
 lines, labels = ax1.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
@@ -254,6 +225,36 @@ plt.margins(0,0)
 #     bbox_inches = 'tight', pad_inches = 0)
 
 ##### Animation routines #####
+
+# sim.generatePlottingPoints()
+
+# # maxAbsU = np.max(np.abs(sim.U))
+# maxAbsU = 1.
+
+# def init_plot():
+#     global field, fig, ax, sim, maxAbsU
+#     fig, ax = plt.subplots()
+#     field = ax.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud'
+#                           ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
+#                           )
+#     # tri = mpl.tri.Triangulation(sim.X,sim.Y)
+#     # ax.triplot(tri, 'r-', lw=1)
+#     x = np.linspace(0, sim.nodeX[-1], 100)
+#     for yi in [0.4, 0.5, 0.6]:
+#         ax.plot(x, [mapping(np.array([[0, yi]]), i) for i in x], 'k')
+#     for xi in sim.nodeX:
+#         ax.plot([xi, xi], [0, 1], 'k:')
+#     # ax.plot(sim.X[np.argmax(sim.U)], sim.Y[np.argmax(sim.U)],
+#     #   'g+', markersize=10)
+#     plt.colorbar(field)
+#     plt.xlabel(r'$x$')
+#     plt.ylabel(r'$y$', rotation=0)
+#     plt.xticks(np.linspace(0, 2*np.pi, 7), 
+#         ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+#     plt.margins(0,0)
+#     return [field]
+
+# init_plot()
 
 # field = ax.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud'
 #                           ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU

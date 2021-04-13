@@ -13,6 +13,8 @@ import numpy as np
 
 from abc import ABCMeta, abstractmethod
 
+from integrators import *
+
 class Mapping(metaclass=ABCMeta):
     @property
     @abstractmethod
@@ -72,9 +74,8 @@ class Mapping(metaclass=ABCMeta):
         """
         raise NotImplementedError
     
-    @abstractmethod
-    def __repr__(self):
-        return f"{self.__class__.__name__}"
+    # def __repr__(self):
+    #     return f"{self.__class__.__name__}"
 
 class StraightMapping(Mapping):
     @property
@@ -147,13 +148,14 @@ class FciFemSim(metaclass=ABCMeta):
         be converted to diffusivity*np.eye(ndim, dtype='float64').
     f : callable
         Forcing function. Must take 2D array of points and return 1D array.
+    integrator : Integrator
+        Object defining time-integration scheme to be used.
     dt : float
         Time interval between each successive timestep.
     timestep : int
         Current timestep of the simulation.
     time : float
-        Current time of the simulation; equal to timestep*dt.
-        
+        Current time of the simulation; equal to timestep*dt.  
     """
     
     def __init__(self, NX, NY, mapping, dt, u0, velocity, diffusivity=0.,
@@ -274,7 +276,7 @@ class FciFemSim(metaclass=ABCMeta):
                 f"the array of node coordinates with shape "
                 f"({self.nNodes}, {self.ndim}).")
         
-    def computeSpatialDiscretization(self):
+    def computeSpatialDiscretization(self, massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
@@ -296,7 +298,8 @@ class FciFemSim(metaclass=ABCMeta):
         nMaxEntries = nEntries * nQuads * NX
         Kdata = np.zeros(nMaxEntries)
         Adata = np.zeros(nMaxEntries)
-        Mdata = np.zeros(nMaxEntries)
+        if not massLumping:
+            Mdata = np.zeros(nMaxEntries)
         row_ind = np.zeros(nMaxEntries, dtype='int')
         col_ind = np.zeros(nMaxEntries, dtype='int')
         self.b = np.zeros(nNodes)
@@ -358,8 +361,9 @@ class FciFemSim(metaclass=ABCMeta):
                     np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
                 Adata[index:index+nEntries] = ( quadWeights[iQ] *
                     np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
-                Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
-                    np.outer(phis, phis).ravel() )
+                if not massLumping:
+                    Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
+                        np.outer(phis, phis).ravel() )
                 row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
                 col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
                 
@@ -372,54 +376,44 @@ class FciFemSim(metaclass=ABCMeta):
                                 shape=(nNodes, nNodes) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
                                 shape=(nNodes, nNodes) )
-        self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
+        if massLumping:
+            self.M = sp.diags(self.u_weights, format='csr')
+        else:
+            self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nNodes, nNodes) )
-        
-        # # Mass-lumped matrix
-        # self.M = sp.diags(self.u_weights, format='csr')
-        
-        # Backward-Euler
-        self.M /= self.dt
-        self.R = self.M + self.K - self.A
-        self.P = None
     
-    def precondition(self, preconditioner='ilu', P=None):
-        """Generate and/or store the preconditioning matrix P.
+    def initializeTimeIntegrator(self, integrator, P='ilu', **kwargs):
+        """Initialize and register the time integration scheme to be used.
 
         Parameters
         ----------
-        preconditioner : {string, None}, optional
-            Which preconditioning method to use. If P is not given, then it
-            must be one of 'jacobi', 'ilu', or None. If P is given, then any
-            string can be given as the name for P; if None is given, it will
-            default to 'user_defined'. The default is 'ilu'.
-        P : {scipy.sparse.linalg.LinearOperator, None}, optional
-            Used to directly specifiy the linear operator to be used.
-            The default is None.
+        integrator : {Integrator (object or subclass type), string}
+            Integrator object or string specifiying which scheme is to be used.
+            If a string, must be one of 'RK' or 'BackwardEuler' ('BE').
+        P : {string, scipy.sparse.linalg.LinearOperator, None}, optional
+            Which preconditioning method to use. P can be a LinearOperator to
+            directly specifiy the preconditioner to be used. Otherwise it must
+            be one of 'jacobi', 'ilu', or None. The default is 'ilu'.
+        **kwargs
+            Used to specify optional arguments for scipy.sparse.linalg.spilu.
+            Only relevant if P is 'ilu', otherwise unsused.
 
         Returns
         -------
         None.
 
         """
-        self.preconditioner = preconditioner
-        if P != None:
-            self.P = P
-            if self.preconditioner == None:
-                self.preconditioner = 'user_defined'
+        if isinstance(integrator, Integrator):
+            self.integrator = Integrator
             return
-        if self.preconditioner == None:
-            self.P = None
-        elif preconditioner.lower() == 'ilu':
-            ilu = sp_la.spilu(self.R)
-            self.P = sp_la.LinearOperator(self.R.shape, lambda x: ilu.solve(x))
-        elif preconditioner.lower() == 'jacobi':
-            self.P = sp_la.inv( sp.diags( self.R.diagonal(), format='csc',
-                                          dtype='float64' ) )
-        else:
-            print(f"Error: unkown preconditioner '{preconditioner}'. "
-                  f"Must be one of 'ilu' or 'jacobi' (or None). "
-                  f"Defaulting to None.")
+        if isinstance(integrator, str):
+            if integrator.lower() in ['backwardeuler', 'be']:
+                Type = BackwardEuler
+            elif integrator.lower() in ['rk']:
+                Type = RK
+        else: # if integrator not an Integrator object or string, assume it's a type
+            Type = integrator
+        self.integrator = Type(self, self.A - self.K, self.M, self.dt, P, **kwargs)
     
     def step(self, nSteps = 1, **kwargs):
         """Advance the simulation a given number of timesteps.
@@ -430,48 +424,15 @@ class FciFemSim(metaclass=ABCMeta):
             Number of timesteps to compute. The default is 1.
         **kwargs
             Used to specify optional arguments passed to the linear solver.
-            Note that kwargs["M"] will be overwritten, use self.precon(...)
-            instead to generate or specify a preconditioner.
+            Note that kwargs["M"] will be overwritten, instead use
+            self.precondition(...) to generate or specify a preconditioner.
 
         Returns
         -------
         None.
 
         """
-        kwargs["M"] = self.P
-        # info = 0
-        # betas = np.array([0.25, 1/3, 0.5, 1]) ## RK4 ##
-        # # betas = np.array([1.]) ## Forward Euler ##
-        # for i in range(nSteps):
-        #     uTemp = self.uI
-        #     for beta in betas:
-        #         self.dudt, info = sp_la.cg(self.M, self.KA@uTemp,
-        #                                     x0=self.dudt, **kwargs)
-        #         # self.dudt = sp_la.spsolve(self.M, self.KA@uTemp)
-        #         uTemp = self.uI + beta*self.dt*self.dudt
-        #         if (info != 0):
-        #             print(f'solution failed with error code: {info}')
-        #     self.uI = uTemp
-        #     self.timestep += 1
-        # self.time = self.timestep * self.dt
-        
-        for i in range(nSteps):
-            # uTemp = u
-            # for beta in betas:
-            #     dudt, info = sp_la.lgmres(M, A @ uTemp, x0=dudt, **kwargs)
-            #     # self.dudt = sp_la.spsolve(self.M, self.KA@uTemp)
-            #     uTemp = u + beta * dt * dudt
-            #     if (info != 0):
-            #         print(f'solution failed with error code: {info}')
-            # u = uTemp
-            self.timestep += 1
-            self.u, info = sp_la.lgmres(self.R, self.M @ self.u, self.u,
-                                        **kwargs) # Backward-Euler
-            if (info != 0):
-                    print(f'TS {self.timestep}: solution failed with error '
-                          f'code {info}')
-        self.time = self.timestep * self.dt
-
+        self.integrator.step(nSteps, **kwargs)
 
     def generatePlottingPoints(self, nx=20, ny=3):
         """Generate set of interpolation points to use for plotting.
