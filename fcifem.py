@@ -288,6 +288,7 @@ class FciFemSim(metaclass=ABCMeta):
         None.
 
         """
+        self.massLumped = massLumping
         ndim = self.ndim
         nNodes = self.nNodes
         NX = self.NX
@@ -389,14 +390,16 @@ class FciFemSim(metaclass=ABCMeta):
         ----------
         integrator : {Integrator (object or subclass type), string}
             Integrator object or string specifiying which scheme is to be used.
-            If a string, must be one of 'RK' or 'BackwardEuler' ('BE').
+            If a string, must be one of 'LowStorageRK' ('RK' or 'LSRK')
+            or 'BackwardEuler' ('BE').
         P : {string, scipy.sparse.linalg.LinearOperator, None}, optional
             Which preconditioning method to use. P can be a LinearOperator to
             directly specifiy the preconditioner to be used. Otherwise it must
             be one of 'jacobi', 'ilu', or None. The default is 'ilu'.
         **kwargs
-            Used to specify optional arguments for scipy.sparse.linalg.spilu.
-            Only relevant if P is 'ilu', otherwise unsused.
+            Used to specify optional arguments for the time integrator.
+            Will be passed to scipy.sparse.linalg.spilu if 'ilu' is used, or
+            can be used to specify betas for LowStorageRK schemes.
 
         Returns
         -------
@@ -409,8 +412,8 @@ class FciFemSim(metaclass=ABCMeta):
         if isinstance(integrator, str):
             if integrator.lower() in ['backwardeuler', 'be']:
                 Type = BackwardEuler
-            elif integrator.lower() in ['rk']:
-                Type = RK
+            elif integrator.lower() in ['lowstoragerk', 'rk', 'lsrk']:
+                Type = LowStorageRK
         else: # if integrator not an Integrator object or string, assume it's a type
             Type = integrator
         self.integrator = Type(self, self.A - self.K, self.M, self.dt, P, **kwargs)

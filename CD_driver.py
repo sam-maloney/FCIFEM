@@ -71,8 +71,8 @@ kwargs={
     'velocity' : velocity,
     'diffusivity' : diffusivity,
     'Nquad' : 20,
-    'px' : 0.,
-    'py' : 0.,
+    'px' : 0.1,
+    'py' : 0.0,
     'seed' : 42,
     'f' : None }
 
@@ -81,18 +81,18 @@ tolerance = 1e-10
 
 # allocate arrays for convergence testing
 start = 2
-stop = 2
+stop = 5
 nSamples = stop - start + 1
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int32')
 E_inf = np.empty(nSamples, dtype='float64')
 E_2 = np.empty(nSamples, dtype='float64')
 
-start_time = default_timer()
-
 # loop over N to test convergence where N is the number of
 # grid cells along one dimension, each cell forms 2 triangles
 # therefore number of nodes equals (N+1)*(N+1)
 for iN, NX in enumerate(NX_array):
+
+    start_time = default_timer()
 
     NY = 4*NX
     
@@ -101,10 +101,18 @@ for iN, NX in enumerate(NX_array):
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
 
-    # Assemble the stiffness matrix and solve for the approximate solution
-    sim.computeSpatialDiscretization()
-    sim.initializeTimeIntegrator('RK', 'ilu')
+    # Assemble the stiffness matrix and itialize time-stepping scheme
+    sim.computeSpatialDiscretization(massLumping = False)
+    sim.initializeTimeIntegrator('RK', betas=4)
+    
+    print(f'setup time = {default_timer()-start_time} s')
+    start_time = default_timer()
+    
+    # Solve for the approximate solution
     sim.step(nSteps, tol=tolerance, atol=tolerance)
+    
+    print(f'solution time = {default_timer()-start_time} s')
+    start_time = default_timer()
     
     # compute the analytic solution and error norms
     u_exact = uExactFunc(sim.nodesMapped)
@@ -112,13 +120,16 @@ for iN, NX in enumerate(NX_array):
     E_inf[iN] = np.linalg.norm(sim.u - u_exact, np.inf)
     E_2[iN] = np.linalg.norm(sim.u - u_exact)/np.sqrt(sim.nNodes)
     
-    end_time = default_timer()
+    print(f'analysis time = {default_timer()-start_time} s')
+    start_time = default_timer()
+    
+    # end_time = default_timer()
     
     # print('Condition Number =', sim.cond('fro'))
     
-    print('max error =', E_inf[iN])
-    print('L2 error  =', E_2[iN])
-    print(f'Elapsed time = {end_time-start_time} s\n')
+    print(f'max error = {E_inf[iN]}')
+    print(f'L2 error  = {E_2[iN]}\n')
+    # print(f'Elapsed time = {end_time-start_time} s\n')
     
 ##### End of loop over N #####
 
@@ -221,7 +232,10 @@ lines2, labels2 = ax2.get_legend_handles_labels()
 ax2.legend(lines + lines2, labels + labels2, loc='best')
 plt.margins(0,0)
 
-# plt.savefig(f"MLS_{kwargs['support'][0]}_{kwargs['method']}.pdf",
+plt.savefig(f"CD_{kwargs['px']}px_{kwargs['py']}py_notMassLumped_RK4.pdf",
+    bbox_inches = 'tight', pad_inches = 0)
+
+# plt.savefig("CD_MassLumped_RK4.pdf",
 #     bbox_inches = 'tight', pad_inches = 0)
 
 ##### Animation routines #####

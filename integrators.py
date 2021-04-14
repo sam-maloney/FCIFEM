@@ -15,12 +15,12 @@ class Integrator(metaclass=ABCMeta):
     """
     Attributes
     ----------
-    M : 
+    LHS : 
         
-    R : 
+    RHS : 
         
-    P : 
-        
+    P : {scipy.sparse.linalg.LinearOperator}
+        Preconditioner for the LHS matrix to be used with the linear solver.
     dt : float
         Time interval between each successive timestep.
     timestep : int
@@ -35,12 +35,11 @@ class Integrator(metaclass=ABCMeta):
     def name(self):
         raise NotImplementedError
 
-    def __init__(self, fciFemSim, dt, P, **kwargs):
+    def __init__(self, fciFemSim, dt):
         self.sim = fciFemSim
         self.time = 0.0
         self.timestep = 0
         self.dt = dt
-        self.precondition(P, **kwargs)
         
     def precondition(self, P='ilu', **kwargs):
         """Generate and/or store the preconditioning matrix P.
@@ -104,7 +103,7 @@ class Integrator(metaclass=ABCMeta):
                 c = la.norm(A, order) * la.norm(la.inv(A), order)
         return c
     
-    @abstractmethod
+    # @abstractmethod
     def step(self, nSteps = 1, **kwargs):
         """Integrate solution a given number of timesteps.
 
@@ -133,9 +132,10 @@ class BackwardEuler(Integrator):
     def name(self): return 'BackwardEuler'
 
     def __init__(self, fciFemSim, R, M, dt, P='ilu', **kwargs):
+        super().__init__(fciFemSim, dt)
         self.RHS = M / dt
         self.LHS = self.RHS - R
-        super().__init__(fciFemSim, dt, P, **kwargs)
+        self.precondition(P, **kwargs)
     
     def step(self, nSteps = 1, **kwargs):
         kwargs["M"] = self.P
@@ -149,19 +149,27 @@ class BackwardEuler(Integrator):
         self.time = self.timestep * self.dt
         
 
-class RK(Integrator):
+class LowStorageRK(Integrator):
     @property
     def name(self): return 'RK'
 
-    def __init__(self, fciFemSim, R, M, dt, P='ilu', **kwargs):
-        self.LHS = M
+    def __init__(self, fciFemSim, R, M, dt, P='ilu', betas=4, **kwargs):
+        super().__init__(fciFemSim, dt)
         self.RHS = R
-        super().__init__(fciFemSim, dt, P, **kwargs)
         self.dudt = np.zeros(self.sim.nNodes)
-        self.betas = np.array([0.25, 1/3, 0.5, 1]) ## RK4 ##
-        # self.betas = np.array([1.]) ## Forward Euler ##
+        if isinstance(betas, np.ndarray):
+            self.betas = betas
+        else:
+            self.betas = np.array([1/n for n in range(betas, 0, -1)])
+        if fciFemSim.massLumped:
+            self.LHS = M.power(-1)
+            self.step = self.stepMassLumped
+        else:
+            self.LHS = M
+            self.step = self.stepNotMassLumped
+            self.precondition(P, **kwargs)
     
-    def step(self, nSteps = 1, **kwargs):
+    def stepNotMassLumped(self, nSteps = 1, **kwargs):
         kwargs["M"] = self.P
         for i in range(nSteps):
             uTemp = self.sim.u
@@ -173,6 +181,16 @@ class RK(Integrator):
                 if (info != 0):
                     print(f'TS {self.timestep}: solution failed with error '
                           f'code {info}')
+            self.sim.u = uTemp
+            self.timestep += 1
+        self.time = self.timestep * self.dt
+        
+    def stepMassLumped(self, nSteps = 1, **kwargs):
+        for i in range(nSteps):
+            uTemp = self.sim.u
+            for beta in self.betas:
+                self.dudt = self.LHS @ self.RHS @ uTemp
+                uTemp = self.sim.u + beta*self.dt*self.dudt
             self.sim.u = uTemp
             self.timestep += 1
         self.time = self.timestep * self.dt
