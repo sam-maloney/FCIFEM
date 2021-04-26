@@ -141,8 +141,8 @@ class BackwardEuler(Integrator):
         kwargs["M"] = self.P
         for i in range(nSteps):
             self.timestep += 1
-            self.sim.u, info = sp_la.lgmres(self.LHS, self.RHS @ self.sim.u,
-                                            x0=self.sim.u, **kwargs)
+            self.sim.u, info = sp_la.lgmres(self.LHS,
+                self.RHS @ self.sim.u + self.sim.b, x0=self.sim.u, **kwargs)
             if (info != 0):
                 print(f'TS {self.timestep}: solution failed with error '
                       f'code {info}')
@@ -174,9 +174,9 @@ class LowStorageRK(Integrator):
         for i in range(nSteps):
             uTemp = self.sim.u
             for beta in self.betas:
-                self.dudt, info = sp_la.cg(self.LHS, self.RHS @ uTemp,
-                                           x0=self.dudt, **kwargs)
-                # self.dudt = sp_la.spsolve(self.LHS, self.RHS @ uTemp)
+                self.dudt, info = sp_la.cg(self.LHS,
+                    self.RHS @ uTemp + self.sim.b, x0=self.dudt, **kwargs)
+                # self.dudt = sp_la.spsolve(self.LHS, self.RHS @ uTemp + self.sim.b)
                 uTemp = self.sim.u + beta*self.dt*self.dudt
                 if (info != 0):
                     print(f'TS {self.timestep}: solution failed with error '
@@ -189,7 +189,7 @@ class LowStorageRK(Integrator):
         for i in range(nSteps):
             uTemp = self.sim.u
             for beta in self.betas:
-                self.dudt = self.LHS @ self.RHS @ uTemp
+                self.dudt = self.LHS @ (self.RHS @ uTemp + self.sim.b)
                 uTemp = self.sim.u + beta*self.dt*self.dudt
             self.sim.u = uTemp
             self.timestep += 1

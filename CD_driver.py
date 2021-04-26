@@ -71,10 +71,9 @@ kwargs={
     'velocity' : velocity,
     'diffusivity' : diffusivity,
     'Nquad' : 20,
-    'px' : 0.1,
+    'px' : 0.0,
     'py' : 0.0,
-    'seed' : 42,
-    'f' : None }
+    'seed' : 42 }
 
 # precon='ilu'
 tolerance = 1e-10
@@ -120,9 +119,6 @@ for iN, NX in enumerate(NX_array):
     E_inf[iN] = np.linalg.norm(sim.u - u_exact, np.inf)
     E_2[iN] = np.linalg.norm(sim.u - u_exact)/np.sqrt(sim.nNodes)
     
-    print(f'analysis time = {default_timer()-start_time} s')
-    start_time = default_timer()
-    
     # end_time = default_timer()
     
     # print('Condition Number =', sim.cond('fro'))
@@ -130,6 +126,9 @@ for iN, NX in enumerate(NX_array):
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}\n')
     # print(f'Elapsed time = {end_time-start_time} s\n')
+    
+    print(f'analysis time = {default_timer()-start_time} s')
+    start_time = default_timer()
     
 ##### End of loop over N #####
 

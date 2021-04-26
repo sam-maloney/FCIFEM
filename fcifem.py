@@ -8,7 +8,7 @@ Created on Mon Jun  8 13:47:07 2020
 from scipy.special import roots_legendre
 # import scipy.integrate
 import scipy.sparse as sp
-import scipy.sparse.linalg as sp_la
+# import scipy.sparse.linalg as sp_la
 import numpy as np
 
 from abc import ABCMeta, abstractmethod
@@ -159,7 +159,7 @@ class FciFemSim(metaclass=ABCMeta):
     """
     
     def __init__(self, NX, NY, mapping, dt, u0, velocity, diffusivity=0.,
-                 Nquad=5, px=0., py=0., seed=None, f=None, **kwargs):
+                 Nquad=5, px=0., py=0., seed=None, **kwargs):
         """Initialize attributes of FCIFEM simulation class
 
         Parameters
@@ -238,8 +238,6 @@ class FciFemSim(metaclass=ABCMeta):
         self.nNodes = NX*NY
         self.dx = self.nodeX[1:] - self.nodeX[0:-1]
         self.dy = self.nodeY[:,1:] - self.nodeY[:,:-1]
-        if f is None:
-            self.f = lambda x: np.repeat(0., len(x.reshape(-1, self.ndim)))
         self.setInitialConditions(u0)
     
     def setInitialConditions(self, u0):
@@ -276,18 +274,18 @@ class FciFemSim(metaclass=ABCMeta):
                 f"the array of node coordinates with shape "
                 f"({self.nNodes}, {self.ndim}).")
         
-    def computeSpatialDiscretization(self, massLumping=False):
+    def computeSpatialDiscretization(self, f=None, massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
         M is the mass matrix from the time derivative
-        KA = K + A
 
         Returns
         -------
         None.
 
         """
+        self.f = f
         self.massLumped = massLumping
         ndim = self.ndim
         nNodes = self.nNodes
@@ -330,8 +328,9 @@ class FciFemSim(metaclass=ABCMeta):
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
-            mapL = self.mapping(quads + [nodeX, 0], nodeX)
-            mapR = self.mapping(quads + [nodeX, 0], self.nodeX[iPlane+1])
+            quads += [nodeX, 0]
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) / self.dy[iPlane][indL]
@@ -371,7 +370,8 @@ class FciFemSim(metaclass=ABCMeta):
                 self.u_weights[indices] += quadWeights[iQ] * phis
                 
                 index += nEntries
-                self.b[indices] += self.f(quad) * phis * quadWeights[iQ]
+                if f is not None:
+                    self.b[indices] += f(quad) * phis * quadWeights[iQ]
         
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nNodes, nNodes) )
