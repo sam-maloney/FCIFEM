@@ -6,14 +6,13 @@ Created on Mon Jun  8 13:47:07 2020
 """
 
 from scipy.special import roots_legendre
-# import scipy.integrate
 import scipy.sparse as sp
 # import scipy.sparse.linalg as sp_la
 import numpy as np
 
 from abc import ABCMeta, abstractmethod
 
-from integrators import *
+import integrators
 
 class Mapping(metaclass=ABCMeta):
     @property
@@ -128,16 +127,14 @@ class FciFemSim(metaclass=ABCMeta):
         Number of planes along x-dimension. Must be NX >= 2.
     NY : int
         Number of nodes on each plane. Must be NY >= 2.
-    Nquad : int
-        Number of quadrature points in each grid cell along one dimension.
     nodeX : numpy.ndarray, shape=(NX+1,)
         x-coords of FCI planes (includes right boundary).
     dx : numpy.ndarray, shape=(NX,)
         Spacing between FCI planes
     nodeY : numpy.ndarray, shape=(NX+1, NY+1)
         y-coords of nodes on each FCI plane (includes right/top boundaries).
-    dy : numpy.ndarray, shape=(NX+1, NY)
-        Spacing between nodes on each FCI plane (includes right boundary).
+    idy : numpy.ndarray, shape=(NX+1, NY)
+        1/spacing between nodes on each FCI plane (includes right boundary).
     nNodes : int
         Number of unique nodal points in the simulation domain (equals NX*NY).
     velocity : np.array([vx,vy], dtype='float64')
@@ -148,17 +145,17 @@ class FciFemSim(metaclass=ABCMeta):
         be converted to diffusivity*np.eye(ndim, dtype='float64').
     f : callable
         Forcing function. Must take 2D array of points and return 1D array.
+    NQX : int
+        Number of quadrature cell divisions between FCI planes.
+    NQY : int
+        Number of quadrature cell divisions in y-direction.
+    Qord : int
+        Number of quadrature points in each grid cell along one dimension.
     integrator : Integrator
-        Object defining time-integration scheme to be used.
-    dt : float
-        Time interval between each successive timestep.
-    timestep : int
-        Current timestep of the simulation.
-    time : float
-        Current time of the simulation; equal to timestep*dt.  
+        Object defining time-integration scheme to be used. 
     """
     
-    def __init__(self, NX, NY, mapping, dt, u0, velocity, diffusivity=0.,
+    def __init__(self, NX, NY, mapping, u0, velocity, diffusivity=0.,
                  Nquad=5, px=0., py=0., seed=None, **kwargs):
         """Initialize attributes of FCIFEM simulation class
 
@@ -171,8 +168,6 @@ class FciFemSim(metaclass=ABCMeta):
         mapping : Mapping
             Mapping function for the FCIFEM method.
             Must be an object derived from fcifem.Mapping.
-        dt : float
-            Time interval between each successive timestep.
         u0 : {numpy.ndarray, callable}
             Initial conditions for the simulation.
             Must be an array of shape (self.nNodes,) or a callable object
@@ -209,10 +204,6 @@ class FciFemSim(metaclass=ABCMeta):
         self.ndim = 2
         self.NX = NX
         self.NY = NY
-        self.dt = dt
-        self.time = 0.0
-        self.timestep = 0
-        self.Nquad = Nquad
         self.mapping = mapping
         self.velocity = velocity
         if isinstance(diffusivity, np.ndarray):
@@ -237,7 +228,7 @@ class FciFemSim(metaclass=ABCMeta):
         self.nodeY[-1] = self.nodeY[0]
         self.nNodes = NX*NY
         self.dx = self.nodeX[1:] - self.nodeX[0:-1]
-        self.dy = self.nodeY[:,1:] - self.nodeY[:,:-1]
+        self.idy = 1. / (self.nodeY[:,1:] - self.nodeY[:,:-1])
         self.setInitialConditions(u0)
     
     def setInitialConditions(self, u0):
@@ -269,16 +260,33 @@ class FciFemSim(metaclass=ABCMeta):
             self.u = u0(self.nodesMapped)
             self.u0 = self.u.copy()
         else:
-            SystemExit(f"u0 must be an array of shape ({self.nNodes},) or a "
-                f"callable object returning such an array and taking as input "
-                f"the array of node coordinates with shape "
+            raise SystemExit(f"u0 must be an array of shape ({self.nNodes},) "
+                f"or a callable object returning such an array and taking as "
+                f"input the array of node coordinates with shape "
                 f"({self.nNodes}, {self.ndim}).")
-        
-    def computeSpatialDiscretization(self, f=None, massLumping=False):
+   
+    def computeSpatialDiscretization(self, f=None, NQY=None, NQX=None, Qord=2,
+                                     quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
+        
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
         M is the mass matrix from the time derivative
+        
+        Parameters
+        ----------
+        f : {callable, None}, optional
+            Forcing function. Must take 2D array of points and return 1D array.
+        NQX : {int, None}, optional
+            Number of quadrature cell divisions between FCI planes.
+        NQY : {int, None}, optional
+            Number of quadrature cell divisions in y-direction.
+        Qord : int, optional
+            Number of quadrature points in each grid cell along one dimension.
+        quadType : string, optional
+            Type of quadrature to be used. Must be either 'gauss' or 'uniform'.
+            Produces either Gauss-Legendre or Newton-Cotes type points/weights.
+        massLumping : bool, optional
 
         Returns
         -------
@@ -291,9 +299,16 @@ class FciFemSim(metaclass=ABCMeta):
         nNodes = self.nNodes
         NX = self.NX
         NY = self.NY
+        if NQX is None:
+            NQX = 1
+        if NQY is None:
+            NQY = NY
+        self.NQX = NQX
+        self.NQY = NQY
+        self.Qord = Qord
         # pre-allocate arrays for stiffness matrix triplets
         nEntries = (2*ndim)**2
-        nQuads = NY*self.Nquad**2
+        nQuads = NQX * NQY * Qord**2
         nMaxEntries = nEntries * nQuads * NX
         Kdata = np.zeros(nMaxEntries)
         Adata = np.zeros(nMaxEntries)
@@ -304,24 +319,24 @@ class FciFemSim(metaclass=ABCMeta):
         self.b = np.zeros(nNodes)
         self.u_weights = np.zeros(nNodes)
         
-        # # For gradients along the mapping direction, needs scipy.integrate
-        # arcLengths = np.array([scipy.integrate.quad(lambda x: 
-        #     np.sqrt(1 + self.mapping.deriv(np.array([[x,0]]))**2),
-        #     self.nodeX[i], self.nodeX[i+1])[0] for i in range(NX)])
-        
         ##### compute spatial discretizaton
         index = 0
         for iPlane in range(NX):
             dx = self.dx[iPlane]
             nodeX = self.nodeX[iPlane]
             ##### generate quadrature points
-            offsets, weights = roots_legendre(self.Nquad)
-            offsets = [offsets * dx / 2, offsets / (2*NY)]
-            weights = [weights * dx / 2, weights / (2*NY)]
-            quads = ( np.indices([1, NY], dtype='float').T.
-                      reshape(-1, ndim) + 0.5 ) \
-                    * [dx, 1/NY]
+            if quadType.lower() in ('gauss', 'g'):
+                offsets, weights = roots_legendre(Qord)
+            elif quadType.lower() in ('uniform', 'u'):
+                offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
+                weights = np.repeat(1., Qord)
+            
+            offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
+            weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
+            quads = ( np.indices([NQX, NQY], dtype='float').T.
+                      reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
             quadWeights = np.repeat(1., len(quads))
+            
             for i in range(ndim):
                 quads = np.concatenate( 
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
@@ -333,25 +348,28 @@ class FciFemSim(metaclass=ABCMeta):
             mapR = self.mapping(quads, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) / self.dy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) / self.dy[iPlane + 1][indR]
+            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            
+            gradX = 1/dx
+            gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
+                                      ( gradX, 0.),( gradX, 0.)))
             
             for iQ, quad in enumerate(quads):
-                phis = np.array([[(1-phiLY[iQ]), (1-phiX[iQ])],
-                                  [  phiLY[iQ]  , (1-phiX[iQ])],
-                                  [(1-phiRY[iQ]),   phiX[iQ]  ],
-                                  [  phiRY[iQ]  ,   phiX[iQ]  ]])
+                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
+                                  (  phiLY[iQ]  , (1-phiX[iQ])),
+                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
+                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
                 
-                # # Gradients along the mapping direction
-                # gradL = np.array([-1/arcLengths[iPlane], -1/dy[iPlane][indL[iQ]]])
-                # gradR = np.array([ 1/arcLengths[iPlane], -1/dy[iPlane + 1][indR[iQ]]])
+                gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
+                                      self.idy[iPlane][indL[iQ]],
+                                     -self.idy[iPlane + 1][indR[iQ]],
+                                      self.idy[iPlane + 1][indR[iQ]])
+                gradphis = gradTemplate * phis
                 
-                # Gradients along the coordinate direction
-                gradL = np.array([-1/dx, -1/self.dy[iPlane][indL[iQ]]])
-                gradR = np.array([ 1/dx, -1/self.dy[iPlane + 1][indR[iQ]]])
-                
-                gradphis = np.vstack((gradL, gradL * [1, -1], 
-                                      gradR, gradR * [1, -1])) * phis
+                # # Gradients along the coordinate direction
+                # gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
+            
                 phis = np.prod(phis, axis=1)
                 indices = np.array([indL[iQ] + NY*iPlane,
                                     (indL[iQ]+1) % NY + NY*iPlane,
@@ -383,7 +401,7 @@ class FciFemSim(metaclass=ABCMeta):
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nNodes, nNodes) )
     
-    def initializeTimeIntegrator(self, integrator, P='ilu', **kwargs):
+    def initializeTimeIntegrator(self, integrator, dt, P='ilu', **kwargs):
         """Initialize and register the time integration scheme to be used.
 
         Parameters
@@ -392,6 +410,8 @@ class FciFemSim(metaclass=ABCMeta):
             Integrator object or string specifiying which scheme is to be used.
             If a string, must be one of 'LowStorageRK' ('RK' or 'LSRK')
             or 'BackwardEuler' ('BE').
+        dt : float
+            Time interval between each successive timestep.
         P : {string, scipy.sparse.linalg.LinearOperator, None}, optional
             Which preconditioning method to use. P can be a LinearOperator to
             directly specifiy the preconditioner to be used. Otherwise it must
@@ -406,17 +426,25 @@ class FciFemSim(metaclass=ABCMeta):
         None.
 
         """
-        if isinstance(integrator, Integrator):
-            self.integrator = Integrator
+        if isinstance(integrator, integrators.Integrator):
+            self.integrator = integrator
             return
         if isinstance(integrator, str):
-            if integrator.lower() in ['backwardeuler', 'be']:
-                Type = BackwardEuler
-            elif integrator.lower() in ['lowstoragerk', 'rk', 'lsrk']:
-                Type = LowStorageRK
+            if integrator.lower() in ('backwardeuler', 'be'):
+                Type = integrators.BackwardEuler
+            elif integrator.lower() in ('lowstoragerk', 'rk', 'lsrk'):
+                Type = integrators.LowStorageRK
         else: # if integrator not an Integrator object or string, assume it's a type
             Type = integrator
-        self.integrator = Type(self, self.A - self.K, self.M, self.dt, P, **kwargs)
+        # Instantiate and store the integrator object
+        try:
+            self.integrator = Type(self, self.A - self.K, self.M, dt, P, **kwargs)
+        except:
+            raise SystemExit("Unable to instantiate integrator of type "
+                f"{repr(Type)}. Should be a string containing one of "
+                "'LowStorageRK' ('RK' or 'LSRK') or 'BackwardEuler' ('BE'), a "
+                "type derived from integrators.Integrator, or an object of "
+                "such a type.")
     
     def step(self, nSteps = 1, **kwargs):
         """Advance the simulation a given number of timesteps.
@@ -469,27 +497,28 @@ class FciFemSim(metaclass=ABCMeta):
                 .reshape(self.ndim, -1).T * [dx/nx, 1/(NY*ny)]
             self.X = np.append(self.X, points[:,0] + nodeX)
             phiX = points[:,0] / dx
-            mapL = self.mapping(points + [nodeX, 0], nodeX)
-            mapR = self.mapping(points + [nodeX, 0], self.nodeX[iPlane+1])
+            points += [nodeX, 0]
+            mapL = self.mapping(points, nodeX)
+            mapR = self.mapping(points, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
-            indR = (np.searchsorted(self.nodeY[(iPlane+1) % NX], mapR, side='right') - 1)%NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) / self.dy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) / self.dy[iPlane + 1][indR]
+            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
+            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
             for iP, point in enumerate(points):
-                self.phiPlot[iPlane*nPointsPerPlane + iP] = [
+                self.phiPlot[iPlane*nPointsPerPlane + iP] = (
                     (1-phiLY[iP]) * (1-phiX[iP]), phiLY[iP] * (1-phiX[iP]),
-                    (1-phiRY[iP]) * phiX[iP]    , phiRY[iP] * phiX[iP] ]
-                self.indPlot[iPlane*nPointsPerPlane + iP] = [
+                    (1-phiRY[iP]) * phiX[iP]    , phiRY[iP] * phiX[iP] )
+                self.indPlot[iPlane*nPointsPerPlane + iP] = (
                     indL[iP] + NY*iPlane,
                     (indL[iP]+1) % NY + NY*iPlane,
                     (indR[iP] + NY*(iPlane+1)) % nNodes,
-                    ((indR[iP]+1) % NY + NY*(iPlane+1)) % nNodes ]
+                    ((indR[iP]+1) % NY + NY*(iPlane+1)) % nNodes )
         
         self.phiPlot[iPlane*nPointsPerPlane + iP + 1:] = self.phiPlot[0:NY*ny + 1]
         self.indPlot[iPlane*nPointsPerPlane + iP + 1:] = self.indPlot[0:NY*ny + 1]
         
-        self.X = np.append(self.X, [2*np.pi*np.ones(NY*ny + 1)])
-        self.Y = np.concatenate([np.tile(points[:,1], NX), points[0:NY*ny + 1,1]])
+        self.X = np.append(self.X, (2*np.pi*np.ones(NY*ny + 1)))
+        self.Y = np.concatenate((np.tile(points[:,1], NX), points[0:NY*ny + 1,1]))
         self.U = np.sum(self.phiPlot * self.u[self.indPlot], axis=1)
     
     def computePlottingSolution(self):
