@@ -25,7 +25,6 @@ kwargs={
     'u0' : f,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 0.,
-    'Nquad' : 5,
     'px' : 0.1,
     'py' : 0.1,
     'seed' : 42 }
@@ -51,7 +50,8 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
     # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, massLumping = False)
+    sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
+                                     massLumping = False)
     
     fh = sp_la.spsolve(sim.M, sim.b)
     

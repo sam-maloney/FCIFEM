@@ -161,7 +161,7 @@ class LowStorageRK(Integrator):
             self.betas = betas
         else:
             self.betas = np.array([1/n for n in range(betas, 0, -1)])
-        if fciFemSim.massLumped:
+        if fciFemSim.massLumping:
             self.LHS = M.power(-1)
             self.step = self.stepMassLumped
         else:

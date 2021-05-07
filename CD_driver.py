@@ -76,7 +76,6 @@ kwargs={
     'u0' : u0,
     'velocity' : velocity,
     'diffusivity' : diffusivity,
-    'Nquad' : 5,
     'px' : 0.0,
     'py' : 0.0,
     'seed' : 42 }
@@ -107,7 +106,8 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
 
     # Assemble the stiffness matrix and itialize time-stepping scheme
-    sim.computeSpatialDiscretization(massLumping = False)
+    sim.computeSpatialDiscretization(NQX=6, NQY=NY, Qord=3, quadType='g',
+                                     massLumping = False)
     # sim.initializeTimeIntegrator('BE', dt)
     sim.initializeTimeIntegrator('RK', dt, betas=4)
     

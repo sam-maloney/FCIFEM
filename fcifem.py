@@ -120,6 +120,8 @@ class SinusoidalMapping(Mapping):
 
 class FciFemSim(metaclass=ABCMeta):
     """Class for flux-coordinate independent FEM (FCIFEM) method.
+    Implements the convection-diffusion equation on a rectangular domain
+    [x, y] = [0...2*pi, 0...1] with doubly-periodic boundary conditions.
     
     Attributes
     ----------
@@ -151,12 +153,17 @@ class FciFemSim(metaclass=ABCMeta):
         Number of quadrature cell divisions in y-direction.
     Qord : int
         Number of quadrature points in each grid cell along one dimension.
+    quadType : string, optional
+        Type of quadrature to be used. Must be either 'gauss' or 'uniform'.
+        Produces Gauss-Legendre or Newton-Cotes points/weights respectively.
+    massLumping : bool, optional
+        Determines whether mass-lumping was used to calculate M matrix.
     integrator : Integrator
         Object defining time-integration scheme to be used. 
     """
     
     def __init__(self, NX, NY, mapping, u0, velocity, diffusivity=0.,
-                 Nquad=5, px=0., py=0., seed=None, **kwargs):
+                 px=0., py=0., seed=None, **kwargs):
         """Initialize attributes of FCIFEM simulation class
 
         Parameters
@@ -180,9 +187,6 @@ class FciFemSim(metaclass=ABCMeta):
             If an array, it must have shape (ndim,ndim). If a float, it will
             be converted to diffusivity*np.eye(ndim, dtype='float').
             The default is 0.
-        Nquad : int, optional
-            Number of quadrature points in each grid cell along one dimension.
-            Must be > 0. The default is 5.
         px : float, optional
             Max amplitude of random perturbations added to FCI plane locations.
             Size is relative to grid spacing (px*2*pi/NX). The default is 0.
@@ -191,7 +195,7 @@ class FciFemSim(metaclass=ABCMeta):
             Size is relative to grid spacing (py/NY). The default is 0.
         seed : {None, int, array_like[ints], numpy.random.SeedSequence}, optional
             A seed to initialize the RNG. If None, then fresh, unpredictable
-            entropy will be pulled from the OS. Default is None.
+            entropy will be pulled from the OS. The default is None.
         f : function object, optional
             Function defining the forcing term throughout the domain.
             The object must take an nx2 numpy.ndarray of points and return a
@@ -265,7 +269,7 @@ class FciFemSim(metaclass=ABCMeta):
                 f"input the array of node coordinates with shape "
                 f"({self.nNodes}, {self.ndim}).")
    
-    def computeSpatialDiscretization(self, f=None, NQY=None, NQX=None, Qord=2,
+    def computeSpatialDiscretization(self, f=None, NQX=1, NQY=None, Qord=2,
                                      quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
         
@@ -277,35 +281,41 @@ class FciFemSim(metaclass=ABCMeta):
         ----------
         f : {callable, None}, optional
             Forcing function. Must take 2D array of points and return 1D array.
-        NQX : {int, None}, optional
+            The default is None.
+        NQX : int, optional
             Number of quadrature cell divisions between FCI planes.
+            The default is 1.
         NQY : {int, None}, optional
             Number of quadrature cell divisions in y-direction.
+            The default is None, which sets NQY = NY.
         Qord : int, optional
             Number of quadrature points in each grid cell along one dimension.
+            The default is 2.
         quadType : string, optional
             Type of quadrature to be used. Must be either 'gauss' or 'uniform'.
             Produces either Gauss-Legendre or Newton-Cotes type points/weights.
+            The default is 'gauss'.
         massLumping : bool, optional
+            Determines whether mass-lumping is used to calculate M matrix.
+            The default is False.
 
         Returns
         -------
         None.
 
         """
-        self.f = f
-        self.massLumped = massLumping
         ndim = self.ndim
         nNodes = self.nNodes
         NX = self.NX
         NY = self.NY
-        if NQX is None:
-            NQX = 1
         if NQY is None:
             NQY = NY
+        self.f = f
         self.NQX = NQX
         self.NQY = NQY
         self.Qord = Qord
+        self.quadType = quadType
+        self.massLumping = massLumping
         # pre-allocate arrays for stiffness matrix triplets
         nEntries = (2*ndim)**2
         nQuads = NQX * NQY * Qord**2
@@ -367,8 +377,8 @@ class FciFemSim(metaclass=ABCMeta):
                                       self.idy[iPlane + 1][indR[iQ]])
                 gradphis = gradTemplate * phis
                 
-                # # Gradients along the coordinate direction
-                # gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
+                # Gradients along the coordinate direction
+                gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
             
                 phis = np.prod(phis, axis=1)
                 indices = np.array([indL[iQ] + NY*iPlane,

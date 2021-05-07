@@ -30,14 +30,13 @@ kwargs={
     'u0' : f,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'Nquad' : 5,
     'px' : 0.1,
     'py' : 0.1,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
 start = 2
-stop = 4
+stop = 8
 nSamples = stop - start + 1
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int32')
 E_inf = np.empty(nSamples, dtype='float64')
@@ -58,7 +57,7 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
     # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, NQY=NY, NQX=6, Qord=3, quadType='g',
+    sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
                                      massLumping=False)
     
     print(f'setup time = {default_timer()-start_time} s')
@@ -166,16 +165,28 @@ plt.margins(0,0)
 
 # For all of the below
 # NX_array = np.array([  4,   8,  16,  32,  64, 128, 256])
-# NY = NX
+# NY = NX, NQY=NY, NQX=6, Qord=3, quadType='g', massLumping=False
 
-# # Uniform spacing, Nquad=5
-# E_2 = np.
-# E_inf = np.
+# # Sinusoidal mapping, Uniform spacing
+# E_2 = np.array([1.51377118e-04, 1.51345163e-03, 4.27174201e-04, 1.10044134e-04,
+#        2.75552544e-05, 6.87046871e-06, 1.72329954e-06])
+# E_inf = np.array([3.02754236e-04, 2.54824976e-03, 7.38828574e-04, 2.04472060e-04,
+#        5.20249246e-05, 1.30128704e-05, 3.31977042e-06])
 
-# # 0.1 perturbation, Nquad=5
-# E_2 = np.
-# E_inf = np.
+# # Sinusoidal mapping, 0.1 perturbation
+# E_2 = np.array([1.17859899e-03, 1.54709326e-03, 4.48683841e-04, 1.18334966e-04,
+#         3.39448878e-05, 1.19400390e-05, 6.06793906e-06])
+# E_inf = np.array([2.35722961e-03, 3.07975031e-03, 8.77070705e-04, 2.78394498e-04,
+#        1.11023827e-04, 5.50049087e-05, 3.19412273e-05])
 
-# # 0.5 perturbation, Nquad=5
-# E_2 = np.
-# E_inf = np.
+# # Straight mapping, Uniform spacing
+# E_2 = np.array([2.66565612e-03, 6.47088425e-04, 1.59542252e-04, 3.97356716e-05,
+#        9.92440295e-06, 2.48050383e-06, 6.20088618e-07])
+# E_inf = np.array([5.33131225e-03, 1.29417685e-03, 3.19084503e-04, 7.94713431e-05,
+#        1.98488059e-05, 4.96100765e-06, 1.24017724e-06])
+
+# # Straight mapping, 0.1 perturbation
+# E_2 = np.array([0.00285971, 0.00103294, 0.00055518, 0.00027292, 0.00017557,
+#        0.00014189, 0.00013756])
+# E_inf = np.array([0.00627925, 0.00310992, 0.00187384, 0.00104082, 0.00057817,
+#        0.0004272 , 0.00031896])
