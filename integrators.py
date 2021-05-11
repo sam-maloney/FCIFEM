@@ -12,14 +12,15 @@ import scipy.sparse.linalg as sp_la
 from abc import ABCMeta, abstractmethod
 
 class Integrator(metaclass=ABCMeta):
-    """
+    """Class for time integration of the temporal ODE discretization.
+    
     Attributes
     ----------
-    LHS : 
-        
-    RHS : 
-        
-    P : {scipy.sparse.linalg.LinearOperator}
+    LHS : scipy.sparse.csr_matrix
+        LHS Matrix whose inverse action must be computed.
+    RHS : scipy.sparse.csr_matrix
+        RHS Matrix multiplying the current solution and added to forcing term.
+    P : scipy.sparse.linalg.LinearOperator
         Preconditioner for the LHS matrix to be used with the linear solver.
     dt : float
         Time interval between each successive timestep.
@@ -103,9 +104,11 @@ class Integrator(metaclass=ABCMeta):
                 c = la.norm(A, order) * la.norm(la.inv(A), order)
         return c
     
-    # @abstractmethod
     def step(self, nSteps = 1, **kwargs):
         """Integrate solution a given number of timesteps.
+        
+        Default implementation given for basic one-step schemes, but can be
+        overriden for multi-step schemes as needed.
 
         Parameters
         ----------
@@ -114,17 +117,22 @@ class Integrator(metaclass=ABCMeta):
         **kwargs
             Used to specify optional arguments passed to the linear solver.
             Note that kwargs["M"] will be overwritten, instead use
-            sim.precondition(...) to generate or specify a preconditioner.
+            precondition(...) to generate or specify a preconditioner.
 
         Returns
         -------
         None.
 
         """
-        raise NotImplementedError
-        
-    # def __repr__(self):
-    #     return f"{self.__class__.__name__}"
+        kwargs["M"] = self.P
+        for i in range(nSteps):
+            self.timestep += 1
+            self.sim.u, info = sp_la.lgmres(self.LHS,
+                self.RHS @ self.sim.u + self.sim.b, x0=self.sim.u, **kwargs)
+            if (info != 0):
+                print(f'TS {self.timestep}: solution failed with error '
+                      f'code {info}')
+        self.time = self.timestep * self.dt
         
         
 class BackwardEuler(Integrator):
@@ -136,22 +144,22 @@ class BackwardEuler(Integrator):
         self.RHS = M / dt
         self.LHS = self.RHS - R
         self.precondition(P, **kwargs)
-    
-    def step(self, nSteps = 1, **kwargs):
-        kwargs["M"] = self.P
-        for i in range(nSteps):
-            self.timestep += 1
-            self.sim.u, info = sp_la.lgmres(self.LHS,
-                self.RHS @ self.sim.u + self.sim.b, x0=self.sim.u, **kwargs)
-            if (info != 0):
-                print(f'TS {self.timestep}: solution failed with error '
-                      f'code {info}')
-        self.time = self.timestep * self.dt
-        
+
+
+class CrankNicolson(Integrator):
+    @property
+    def name(self): return 'CrankNicolson'
+
+    def __init__(self, fciFemSim, R, M, dt, P='ilu', **kwargs):
+        super().__init__(fciFemSim, dt)
+        self.RHS = M/dt + 0.5*R
+        self.LHS = self.RHS - R
+        self.precondition(P, **kwargs)
+
 
 class LowStorageRK(Integrator):
     @property
-    def name(self): return 'RK'
+    def name(self): return 'LowStorageRungeKutta'
 
     def __init__(self, fciFemSim, R, M, dt, P='ilu', betas=4, **kwargs):
         super().__init__(fciFemSim, dt)
@@ -174,7 +182,7 @@ class LowStorageRK(Integrator):
         for i in range(nSteps):
             uTemp = self.sim.u
             for beta in self.betas:
-                self.dudt, info = sp_la.cg(self.LHS,
+                self.dudt, info = sp_la.lgmres(self.LHS,
                     self.RHS @ uTemp + self.sim.b, x0=self.dudt, **kwargs)
                 # self.dudt = sp_la.spsolve(self.LHS, self.RHS @ uTemp + self.sim.b)
                 uTemp = self.sim.u + beta*self.dt*self.dudt

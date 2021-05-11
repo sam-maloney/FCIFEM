@@ -27,7 +27,6 @@ uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
-    'u0' : f,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
     'px' : 0.1,
@@ -56,12 +55,15 @@ for iN, NX in enumerate(NX_array):
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
+    sim.setInitialConditions(f)
+    
     # Assemble the mass matrix and forcing term
     sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
                                      massLumping=False)
     
     print(f'setup time = {default_timer()-start_time} s')
     
+    # Solve for the approximate solution
     # sim.u = sp_la.spsolve(sim.K, sim.b)
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=1e-10, atol=1e-10)
     
@@ -93,7 +95,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-sim.generatePlottingPoints(1,1)
+sim.generatePlottingPoints(nx=1, ny=1)
 sim.computePlottingSolution()
 
 vmin = np.min(sim.U)

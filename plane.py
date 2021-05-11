@@ -20,7 +20,6 @@ def f(p):
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
-    'u0' : f,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 0.,
     'Nquad' : 1,
@@ -33,6 +32,7 @@ NY = 4*NX
 
 # allocate arrays and compute grid
 sim = fcifem.FciFemSim(NX, NY, **kwargs)
+sim.setInitialConditions(f)
 
 print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
@@ -57,7 +57,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 
 sim.u = sim.u0func(sim.nodes)
 
-sim.generatePlottingPoints()
+sim.generatePlottingPoints(nx=20, ny=3)
 sim.computePlottingSolution()
 
 vmin = np.min(sim.U)

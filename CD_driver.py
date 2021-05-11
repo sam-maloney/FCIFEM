@@ -73,7 +73,7 @@ uExactFunc = lambda p: u0( (p -t_final*velocity)
 
 kwargs={
     'mapping' : mapping,
-    'u0' : u0,
+    # 'u0' : u0,
     'velocity' : velocity,
     'diffusivity' : diffusivity,
     'px' : 0.0,
@@ -104,12 +104,15 @@ for iN, NX in enumerate(NX_array):
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
+    
+    sim.setInitialConditions(u0)
 
     # Assemble the stiffness matrix and itialize time-stepping scheme
     sim.computeSpatialDiscretization(NQX=6, NQY=NY, Qord=3, quadType='g',
                                      massLumping = False)
     # sim.initializeTimeIntegrator('BE', dt)
-    sim.initializeTimeIntegrator('RK', dt, betas=4)
+    sim.initializeTimeIntegrator('CN', dt)
+    # sim.initializeTimeIntegrator('RK', dt, betas=4)
     
     print(f'setup time = {default_timer()-start_time} s')
     start_time = default_timer()
@@ -246,7 +249,7 @@ print(f'min(E_2)   = {np.min(E_2)}')
 
 ##### Animation routines #####
 
-sim.generatePlottingPoints(5,2)
+sim.generatePlottingPoints(nx=5, ny=2)
 
 # maxAbsU = np.max(np.abs(sim.U))
 maxAbsU = 1.

@@ -158,11 +158,19 @@ class FciFemSim(metaclass=ABCMeta):
         Produces Gauss-Legendre or Newton-Cotes points/weights respectively.
     massLumping : bool, optional
         Determines whether mass-lumping was used to calculate M matrix.
+    K : scipy.sparse.csr_matrix
+        The stiffness matrix from the diffusion term
+    A : scipy.sparse.csr_matrix
+        The advection matrix
+    M : scipy.sparse.csr_matrix
+        The mass matrix from the time derivative
+    b : numpy.ndarray, shape=(nNodes,)
+        RHS forcing vector generated from forcing function f.
     integrator : Integrator
         Object defining time-integration scheme to be used. 
     """
     
-    def __init__(self, NX, NY, mapping, u0, velocity, diffusivity=0.,
+    def __init__(self, NX, NY, mapping, velocity, diffusivity=0.,
                  px=0., py=0., seed=None, **kwargs):
         """Initialize attributes of FCIFEM simulation class
 
@@ -175,11 +183,6 @@ class FciFemSim(metaclass=ABCMeta):
         mapping : Mapping
             Mapping function for the FCIFEM method.
             Must be an object derived from fcifem.Mapping.
-        u0 : {numpy.ndarray, callable}
-            Initial conditions for the simulation.
-            Must be an array of shape (self.nNodes,) or a callable object
-            returning such an array and taking as input the array of node
-            coordinates with shape (self.nNodes, self.ndim).
         velocity : np.array([vx, vy], dtype='float')
             Background velocity of the fluid.
         diffusivity : {numpy.ndarray, float}, optional
@@ -196,11 +199,6 @@ class FciFemSim(metaclass=ABCMeta):
         seed : {None, int, array_like[ints], numpy.random.SeedSequence}, optional
             A seed to initialize the RNG. If None, then fresh, unpredictable
             entropy will be pulled from the OS. The default is None.
-        f : function object, optional
-            Function defining the forcing term throughout the domain.
-            The object must take an nx2 numpy.ndarray of points and return a
-            1D numpy.ndarray of size n for the function values at those points.
-            The default is f(x) = 0.
         **kwargs
             Keyword arguments
             
@@ -233,9 +231,8 @@ class FciFemSim(metaclass=ABCMeta):
         self.nNodes = NX*NY
         self.dx = self.nodeX[1:] - self.nodeX[0:-1]
         self.idy = 1. / (self.nodeY[:,1:] - self.nodeY[:,:-1])
-        self.setInitialConditions(u0)
     
-    def setInitialConditions(self, u0):
+    def setInitialConditions(self, u0, mapped=True):
         """Initialize the nodal coefficients for the given IC.
         
         Parameters
@@ -245,6 +242,9 @@ class FciFemSim(metaclass=ABCMeta):
             Must be an array of shape (self.nNodes,) or a callable object
             returning such an array and taking as input the array of node
             coordinates with shape (self.nNodes, self.ndim).
+        mapped : bool, optional
+            Whether mapping is applied to node positions before applying ICs.
+            The default is True.
 
         Returns
         -------
@@ -261,7 +261,10 @@ class FciFemSim(metaclass=ABCMeta):
                                 self.nodeY[:-1,:-1].ravel()) ).T
             self.nodesMapped = self.nodes.copy()
             self.nodesMapped[:,1] = self.mapping(self.nodes, 0)
-            self.u = u0(self.nodesMapped)
+            if mapped:
+                self.u = u0(self.nodesMapped)
+            else:
+                self.u = u0(self.nodes)
             self.u0 = self.u.copy()
         else:
             raise SystemExit(f"u0 must be an array of shape ({self.nNodes},) "
@@ -418,8 +421,8 @@ class FciFemSim(metaclass=ABCMeta):
         ----------
         integrator : {Integrator (object or subclass type), string}
             Integrator object or string specifiying which scheme is to be used.
-            If a string, must be one of 'LowStorageRK' ('RK' or 'LSRK')
-            or 'BackwardEuler' ('BE').
+            If a string, must be one of 'LowStorageRK' ('RK' or 'LSRK'),
+            'BackwardEuler' ('BE'), or 'CrankNicolson' ('CN').
         dt : float
             Time interval between each successive timestep.
         P : {string, scipy.sparse.linalg.LinearOperator, None}, optional
@@ -442,6 +445,8 @@ class FciFemSim(metaclass=ABCMeta):
         if isinstance(integrator, str):
             if integrator.lower() in ('backwardeuler', 'be'):
                 Type = integrators.BackwardEuler
+            elif integrator.lower() in ('cranknicolson', 'cn'):
+                Type = integrators.CrankNicolson
             elif integrator.lower() in ('lowstoragerk', 'rk', 'lsrk'):
                 Type = integrators.LowStorageRK
         else: # if integrator not an Integrator object or string, assume it's a type
@@ -475,17 +480,17 @@ class FciFemSim(metaclass=ABCMeta):
         """
         self.integrator.step(nSteps, **kwargs)
 
-    def generatePlottingPoints(self, nx=20, ny=3):
+    def generatePlottingPoints(self, nx=1, ny=1):
         """Generate set of interpolation points to use for plotting.
 
         Parameters
         ----------
         nx : int, optional
             Number of points per grid division in the x-direction.
-            The default is 20.
+            The default is 1.
         ny : int, optional
             Number of points per grid division in the y-direction.
-            The default is 3.
+            The default is 1.
 
         Returns
         -------

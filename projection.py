@@ -22,7 +22,6 @@ def f(p):
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
-    'u0' : f,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 0.,
     'px' : 0.1,
@@ -48,6 +47,8 @@ for iN, NX in enumerate(NX_array):
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
+    
+    sim.setInitialConditions(f)
     
     # Assemble the mass matrix and forcing term
     sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
@@ -85,7 +86,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 
 sim.u = fh
 
-sim.generatePlottingPoints(1,1)
+sim.generatePlottingPoints(nx=1, ny=1)
 sim.computePlottingSolution()
 
 fh_plot = np.sum(sim.phiPlot * fh[sim.indPlot], axis=1)
