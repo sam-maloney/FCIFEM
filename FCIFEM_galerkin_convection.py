@@ -24,7 +24,7 @@ def f(points):
     return np.repeat(0., len(points.reshape(-1,2)))
 
 ##### uniform X spacing
-NX = 5  # number of planes
+NX = 6  # number of planes
 nodeX = 2*np.pi*np.arange(NX+1)/NX
 
 # ##### non-uniform X spacing
@@ -69,7 +69,8 @@ diffusivity += D_i*np.eye(2)
 
 dt = 0.005
 # nSteps = int(np.rint(np.sum(dx[0:3])/dt))
-nSteps = int(1/dt+10)
+nSteps = int(1/dt)
+# nSteps = 1
 
 # ##### generate quadrature points
 # offsets, weights = roots_legendre(Nquad)
@@ -294,7 +295,7 @@ def step(nSteps=1):
 
 # generate plotting points
 nx = 20
-ny = 3
+ny = 5
 nPoints = nx*(NY*ny + 1)
 phiPlot = np.empty((nPoints*NX + NY*ny + 1, 4))
 indPlot = np.empty((nPoints*NX + NY*ny + 1, 4), dtype='int')
@@ -333,6 +334,7 @@ maxAbsU = 1.
 def init_plot():
     global field, fig, ax, X, Y, U, maxAbsU
     fig, ax = plt.subplots()
+    fig.set_size_inches(5,3)
     field = ax.tripcolor(X, Y, U, shading='gouraud'
                          ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
                          )
@@ -368,9 +370,9 @@ def animate(i):
     return [field]
 
 ani = animation.FuncAnimation(
-    fig, animate, frames=nSteps, interval=15)
+    fig, animate, frames=nSteps, interval=30)
 
-# ani.save('movie.mp4', writer='ffmpeg', dpi=200)
+ani.save('movie.mp4', writer='ffmpeg', dpi=200)
 
 print(f'nSteps = {nSteps}')
 print(f'max(u) = {np.max(u)}')

@@ -6,8 +6,9 @@ Created on Mon Jun  8 13:47:07 2020
 """
 
 from scipy.special import roots_legendre
+import scipy.linalg as la
 import scipy.sparse as sp
-# import scipy.sparse.linalg as sp_la
+import scipy.sparse.linalg as sp_la
 import numpy as np
 
 from abc import ABCMeta, abstractmethod
@@ -252,8 +253,8 @@ class FciFemSim(metaclass=ABCMeta):
 
         """
         if isinstance(u0, np.ndarray) and u0.shape == (self.nNodes,):
-            self.u = u0.copy()
             self.u0 = u0
+            self.u = u0.copy()
             self.u0func = None
         elif callable(u0):
             self.u0func = u0
@@ -273,7 +274,7 @@ class FciFemSim(metaclass=ABCMeta):
                 f"({self.nNodes}, {self.ndim}).")
    
     def computeSpatialDiscretization(self, f=None, NQX=1, NQY=None, Qord=2,
-                                     quadType='gauss', massLumping=False):
+                                      quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
         
         K is the stiffness matrix from the diffusion term
@@ -338,6 +339,152 @@ class FciFemSim(metaclass=ABCMeta):
             dx = self.dx[iPlane]
             nodeX = self.nodeX[iPlane]
             ##### generate quadrature points
+            if quadType.lower() in ('gauss', 'g', 'gaussian'):
+                offsets, weights = roots_legendre(Qord)
+            elif quadType.lower() in ('uniform', 'u'):
+                offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
+                weights = np.repeat(1., Qord)
+            
+            offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
+            weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
+            quads = ( np.indices([NQX, NQY], dtype='float').T.
+                      reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
+            quadWeights = np.repeat(1., len(quads))
+            
+            for i in range(ndim):
+                quads = np.concatenate( 
+                    [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
+                quadWeights = np.concatenate(
+                    [quadWeights * weight for weight in weights[i]] )
+            phiX = quads[:,0] / dx
+            quads += [nodeX, 0]
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, self.nodeX[iPlane+1])
+            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
+            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
+            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            
+            gradX = 1/dx
+            gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
+                                      ( gradX, 0.),( gradX, 0.)))
+            
+            for iQ, quad in enumerate(quads):
+                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
+                                  (  phiLY[iQ]  , (1-phiX[iQ])),
+                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
+                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                
+                gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
+                                      self.idy[iPlane][indL[iQ]],
+                                      -self.idy[iPlane + 1][indR[iQ]],
+                                      self.idy[iPlane + 1][indR[iQ]])
+                gradphis = gradTemplate * phis
+                
+                # Gradients along the coordinate direction
+                gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
+            
+                phis = np.prod(phis, axis=1)
+                indices = np.array([indL[iQ] + NY*iPlane,
+                                    (indL[iQ]+1) % NY + NY*iPlane,
+                                    (indR[iQ] + NY*(iPlane+1)) % nNodes,
+                                    ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
+                Kdata[index:index+nEntries] = ( quadWeights[iQ] * 
+                    np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
+                Adata[index:index+nEntries] = ( quadWeights[iQ] *
+                    np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
+                if not massLumping:
+                    Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
+                        np.outer(phis, phis).ravel() )
+                row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
+                col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
+                
+                self.u_weights[indices] += quadWeights[iQ] * phis
+                
+                index += nEntries
+                if f is not None:
+                    self.b[indices] += f(quad) * phis * quadWeights[iQ]
+        
+        self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+        self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+        if massLumping:
+            self.M = sp.diags(self.u_weights, format='csr')
+        else:
+            self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+    
+    def computeSpatialDiscretizationLinearVCI(self, f=None, NQX=1, NQY=None, Qord=2,
+                                      quadType='gauss', massLumping=False):
+        """Assemble the system discretization matrices K, A, M in CSR format.
+        
+        K is the stiffness matrix from the diffusion term
+        A is the advection matrix
+        M is the mass matrix from the time derivative
+        
+        Parameters
+        ----------
+        f : {callable, None}, optional
+            Forcing function. Must take 2D array of points and return 1D array.
+            The default is None.
+        NQX : int, optional
+            Number of quadrature cell divisions between FCI planes.
+            The default is 1.
+        NQY : {int, None}, optional
+            Number of quadrature cell divisions in y-direction.
+            The default is None, which sets NQY = NY.
+        Qord : int, optional
+            Number of quadrature points in each grid cell along one dimension.
+            The default is 2.
+        quadType : string, optional
+            Type of quadrature to be used. Must be either 'gauss' or 'uniform'.
+            Produces either Gauss-Legendre or Newton-Cotes type points/weights.
+            The default is 'gauss'.
+        massLumping : bool, optional
+            Determines whether mass-lumping is used to calculate M matrix.
+            The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
+        ndim = self.ndim
+        nNodes = self.nNodes
+        NX = self.NX
+        NY = self.NY
+        if NQY is None:
+            NQY = NY
+        self.f = f
+        self.NQX = NQX
+        self.NQY = NQY
+        self.Qord = Qord
+        self.quadType = quadType
+        self.massLumping = massLumping
+        # pre-allocate arrays for stiffness matrix triplets
+        nEntries = (2*ndim)**2
+        nQuads = NQX * NQY * Qord**2
+        nMaxEntries = nEntries * nQuads * NX
+        Kdata = np.zeros(nMaxEntries)
+        Adata = np.zeros(nMaxEntries)
+        if not massLumping:
+            Mdata = np.zeros(nMaxEntries)
+        row_ind = np.zeros(nMaxEntries, dtype='int')
+        col_ind = np.zeros(nMaxEntries, dtype='int')
+        self.b = np.zeros(nNodes)
+        self.u_weights = np.zeros(nNodes)
+        
+        self.store = []
+        self.areas = np.zeros(nNodes)
+        self.xis = np.zeros((self.nNodes, self.ndim))
+        
+        ##### compute spatial discretizaton
+        index = 0
+        for iPlane in range(NX):
+            dx = self.dx[iPlane]
+            nodeX = self.nodeX[iPlane]
+            ##### generate quadrature points
             if quadType.lower() in ('gauss', 'g'):
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
@@ -376,7 +523,7 @@ class FciFemSim(metaclass=ABCMeta):
                 
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
-                                     -self.idy[iPlane + 1][indR[iQ]],
+                                      -self.idy[iPlane + 1][indR[iQ]],
                                       self.idy[iPlane + 1][indR[iQ]])
                 gradphis = gradTemplate * phis
                 
@@ -388,21 +535,419 @@ class FciFemSim(metaclass=ABCMeta):
                                     (indL[iQ]+1) % NY + NY*iPlane,
                                     (indR[iQ] + NY*(iPlane+1)) % nNodes,
                                     ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
-                Kdata[index:index+nEntries] = ( quadWeights[iQ] * 
-                    np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
-                Adata[index:index+nEntries] = ( quadWeights[iQ] *
-                    np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
-                if not massLumping:
-                    Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
-                        np.outer(phis, phis).ravel() )
-                row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
-                col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
+                quadWeight = quadWeights[iQ]
+                self.store.append((indices, phis, gradphis, quadWeight))
+                self.areas[indices] += quadWeight
+                self.xis[indices] -= gradphis * quadWeight                
+                self.u_weights[indices] += quadWeight * phis
                 
-                self.u_weights[indices] += quadWeights[iQ] * phis
-                
-                index += nEntries
                 if f is not None:
-                    self.b[indices] += f(quad) * phis * quadWeights[iQ]
+                    self.b[indices] += f(quad) * phis * quadWeight
+        
+        self.xis /= self.areas.reshape(-1,1)
+        
+        for iQ, (indices, phis, gradphis, quadWeight) in enumerate(self.store):
+            testgrads = gradphis + self.xis[indices]
+            # Kdata[index:index+nEntries] = ( quadWeight * 
+            #     np.ravel( gradphis @ (self.diffusivity @ testgrads.T) ) )
+            Kdata[index:index+nEntries] = ( quadWeight * 
+                np.ravel( testgrads @ (self.diffusivity @ gradphis.T) ) )
+            Adata[index:index+nEntries] = ( quadWeight *
+                np.outer(np.dot(testgrads, self.velocity), phis).ravel() )
+            if not massLumping:
+                Mdata[index:index+nEntries] = ( quadWeight * 
+                    np.outer(phis, phis).ravel() )
+            row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
+            col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
+            index += nEntries
+        
+        self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+        self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+        if massLumping:
+            self.M = sp.diags(self.u_weights, format='csr')
+        else:
+            self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+    
+    def computeSpatialDiscretizationQuadraticVCI(self, f=None, NQX=1, NQY=None, Qord=2,
+                                      quadType='gauss', massLumping=False):
+        """Assemble the system discretization matrices K, A, M in CSR format.
+        
+        K is the stiffness matrix from the diffusion term
+        A is the advection matrix
+        M is the mass matrix from the time derivative
+        
+        Parameters
+        ----------
+        f : {callable, None}, optional
+            Forcing function. Must take 2D array of points and return 1D array.
+            The default is None.
+        NQX : int, optional
+            Number of quadrature cell divisions between FCI planes.
+            The default is 1.
+        NQY : {int, None}, optional
+            Number of quadrature cell divisions in y-direction.
+            The default is None, which sets NQY = NY.
+        Qord : int, optional
+            Number of quadrature points in each grid cell along one dimension.
+            The default is 2.
+        quadType : string, optional
+            Type of quadrature to be used. Must be either 'gauss' or 'uniform'.
+            Produces either Gauss-Legendre or Newton-Cotes type points/weights.
+            The default is 'gauss'.
+        massLumping : bool, optional
+            Determines whether mass-lumping is used to calculate M matrix.
+            The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
+        ndim = self.ndim
+        nNodes = self.nNodes
+        NX = self.NX
+        NY = self.NY
+        if NQY is None:
+            NQY = NY
+        self.f = f
+        self.NQX = NQX
+        self.NQY = NQY
+        self.Qord = Qord
+        self.quadType = quadType
+        self.massLumping = massLumping
+        # pre-allocate arrays for stiffness matrix triplets
+        nEntries = (2*ndim)**2
+        nQuads = NQX * NQY * Qord**2
+        nMaxEntries = nEntries * nQuads * NX
+        Kdata = np.zeros(nMaxEntries)
+        Adata = np.zeros(nMaxEntries)
+        if not massLumping:
+            Mdata = np.zeros(nMaxEntries)
+        row_ind = np.zeros(nMaxEntries, dtype='int')
+        col_ind = np.zeros(nMaxEntries, dtype='int')
+        self.b = np.zeros(nNodes)
+        self.u_weights = np.zeros(nNodes)
+        
+        self.store = []
+        A = np.zeros((self.nNodes, 3, 3))
+        r = np.zeros((self.nNodes, self.ndim, 3))
+        self.xi = np.empty((self.nNodes, self.ndim, 3))
+        # self.areas = np.zeros(nNodes)
+        # self.xis = np.zeros((self.nNodes, self.ndim))
+        
+        ##### compute spatial discretizaton
+        index = 0
+        for iPlane in range(NX):
+            dx = self.dx[iPlane]
+            nodeX = self.nodeX[iPlane]
+            nodeX1 = self.nodeX[iPlane+1]
+            ##### generate quadrature points
+            if quadType.lower() in ('gauss', 'g'):
+                offsets, weights = roots_legendre(Qord)
+            elif quadType.lower() in ('uniform', 'u'):
+                offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
+                weights = np.repeat(1., Qord)
+            
+            offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
+            weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
+            quads = ( np.indices([NQX, NQY], dtype='float').T.
+                      reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
+            quadWeights = np.repeat(1., len(quads))
+            
+            for i in range(ndim):
+                quads = np.concatenate( 
+                    [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
+                quadWeights = np.concatenate(
+                    [quadWeights * weight for weight in weights[i]] )
+            phiX = quads[:,0] / dx
+            quads += [nodeX, 0]
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, nodeX1)
+            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
+            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
+            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            
+            gradX = 1/dx
+            gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
+                                      ( gradX, 0.),( gradX, 0.)))
+            
+            for iQ, quad in enumerate(quads):
+                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
+                                  (  phiLY[iQ]  , (1-phiX[iQ])),
+                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
+                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                
+                gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
+                                      self.idy[iPlane][indL[iQ]],
+                                      -self.idy[iPlane + 1][indR[iQ]],
+                                      self.idy[iPlane + 1][indR[iQ]])
+                gradphis = gradTemplate * phis
+                
+                # Gradients along the coordinate direction
+                gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
+            
+                phis = np.prod(phis, axis=1)
+                indices = np.array([indL[iQ] + NY*iPlane,
+                                    (indL[iQ]+1) % NY + NY*iPlane,
+                                    (indR[iQ] + NY*(iPlane+1)) % nNodes,
+                                    ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
+                quadWeight = quadWeights[iQ]
+                # self.store.append((indices, phis, gradphis, quadWeight))
+                # self.areas[indices] += quadWeight
+                # self.xis[indices] -= gradphis * quadWeight                
+                self.u_weights[indices] += quadWeight * phis
+                
+                disps = np.array(((quad[0][0] - nodeX,  quad[0][1] - self.nodeY[iPlane][indL[iQ]]),
+                                  (quad[0][0] - nodeX,  quad[0][1] - self.nodeY[iPlane][indL[iQ]+1]),
+                                  (quad[0][0] - nodeX1, quad[0][1] - self.nodeY[iPlane+1][indR[iQ]]),
+                                  (quad[0][0] - nodeX1, quad[0][1] - self.nodeY[iPlane+1][indR[iQ]+1])))
+                
+                self.store.append((indices, gradphis, disps, quadWeight))
+                P = np.hstack((np.ones((len(indices), 1)), disps))
+                A[indices] += quadWeight * \
+                    np.apply_along_axis(lambda x: np.outer(x,x), 1, P)
+                r[indices,:,0] -= gradphis * quadWeight
+                r[indices,0,1] -= phis * quadWeight
+                r[indices,1,2] -= phis * quadWeight
+                r[indices,:,1:3] -= np.apply_along_axis(lambda x: np.outer(x[0:2],
+                    x[2:4]), 1, np.hstack((gradphis, disps))) * quadWeight
+                
+                if f is not None:
+                    self.b[indices] += f(quad) * phis * quadWeight
+        
+        # self.xis /= self.areas.reshape(-1,1)
+        
+        for i, row in enumerate(A):
+            lu, piv = la.lu_factor(A[i], True, False)
+            for j in range(self.ndim):
+                self.xi[i,j] = la.lu_solve((lu, piv), r[i,j], 0, True, False)
+        
+        for iQ, (indices, gradphis, disps, quadWeight) in enumerate(self.store):
+            # Kdata[index:index+nEntries] = quadWeight * \
+            #     np.ravel((gradphis + self.xi[indices,:,0] +
+            #         self.xi[indices,:,1] * disps[:,0:1] +
+            #         self.xi[indices,:,2] * disps[:,1:2]) @ (self.diffusivity @ gradphis.T))
+            # Adata[index:index+nEntries] = ( quadWeight *
+            #     np.outer(np.dot(gradphis + self.xi[indices,:,0] +
+            #         self.xi[indices,:,1] * disps[:,0:1] +
+            #         self.xi[indices,:,2] * disps[:,1:2], self.velocity), phis).ravel() )
+            
+            testgrads = (gradphis + self.xi[indices,:,0] +
+                    self.xi[indices,:,1] * disps[:,0:1] +
+                    self.xi[indices,:,2] * disps[:,1:2])
+            # testgrads -= 0.25*np.sum(testgrads, axis=0)
+            
+            Kdata[index:index+nEntries] = quadWeight * \
+                np.ravel(testgrads @ (self.diffusivity @ gradphis.T))
+            Adata[index:index+nEntries] = ( quadWeight *
+                np.outer(np.dot(testgrads, self.velocity), phis).ravel() )
+            
+            # if np.sum((gradphis + self.xi[indices,:,0] +
+            #         self.xi[indices,:,1] * disps[:,0:1] +
+            #         self.xi[indices,:,2] * disps[:,1:2]) @
+            #         (self.diffusivity @ gradphis.T)) > 1e-10:
+            #     print('non-zero K sum detected.')
+            
+            # Kdata[index:index+nEntries] = ( quadWeight * 
+            #     np.ravel( (gradphis + self.xis[indices]) @ (self.diffusivity @ gradphis.T) ) )
+            # Adata[index:index+nEntries] = ( quadWeight *
+            #     np.outer(np.dot(gradphis + self.xis[indices], self.velocity), phis).ravel() )
+            if not massLumping:
+                Mdata[index:index+nEntries] = ( quadWeight * 
+                    np.outer(phis, phis).ravel() )
+            row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
+            col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
+            index += nEntries
+        
+        self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+        self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+        if massLumping:
+            self.M = sp.diags(self.u_weights, format='csr')
+        else:
+            self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
+                                shape=(nNodes, nNodes) )
+            
+    def computeSpatialDiscretizationConservativeLinearVCI(self, f=None, NQX=1, NQY=None, Qord=2,
+                                      quadType='gauss', massLumping=False):
+        """Assemble the system discretization matrices K, A, M in CSR format.
+        
+        K is the stiffness matrix from the diffusion term
+        A is the advection matrix
+        M is the mass matrix from the time derivative
+        
+        Parameters
+        ----------
+        f : {callable, None}, optional
+            Forcing function. Must take 2D array of points and return 1D array.
+            The default is None.
+        NQX : int, optional
+            Number of quadrature cell divisions between FCI planes.
+            The default is 1.
+        NQY : {int, None}, optional
+            Number of quadrature cell divisions in y-direction.
+            The default is None, which sets NQY = NY.
+        Qord : int, optional
+            Number of quadrature points in each grid cell along one dimension.
+            The default is 2.
+        quadType : string, optional
+            Type of quadrature to be used. Must be either 'gauss' or 'uniform'.
+            Produces either Gauss-Legendre or Newton-Cotes type points/weights.
+            The default is 'gauss'.
+        massLumping : bool, optional
+            Determines whether mass-lumping is used to calculate M matrix.
+            The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
+        ndim = self.ndim
+        nNodes = self.nNodes
+        NX = self.NX
+        NY = self.NY
+        if NQY is None:
+            NQY = NY
+        self.f = f
+        self.NQX = NQX
+        self.NQY = NQY
+        self.Qord = Qord
+        self.quadType = quadType
+        self.massLumping = massLumping
+        # pre-allocate arrays for stiffness matrix triplets
+        nEntries = (2*ndim)**2
+        nQuads = NQX * NQY * Qord**2
+        nMaxEntries = nEntries * nQuads * NX
+        Kdata = np.zeros(nMaxEntries)
+        Adata = np.zeros(nMaxEntries)
+        if not massLumping:
+            Mdata = np.zeros(nMaxEntries)
+        row_ind = np.zeros(nMaxEntries, dtype='int')
+        col_ind = np.zeros(nMaxEntries, dtype='int')
+        self.b = np.zeros(nNodes)
+        self.u_weights = np.zeros(nNodes)
+        
+        self.store = []
+        # self.areas = np.zeros(nNodes)
+        # self.xis = np.zeros((self.nNodes, self.ndim))
+        self.gradphiSums = np.zeros((self.nNodes, self.ndim))
+        self.gradphiSumsNew = np.zeros((self.nNodes, self.ndim))
+        
+        wg = np.zeros(8 * nQuads * NX)
+        ri = np.zeros(8 * nQuads * NX, dtype='int')
+        ci = np.zeros(8 * nQuads * NX, dtype='int')
+        
+        ##### compute spatial discretizaton
+        index = 0
+        for iPlane in range(NX):
+            dx = self.dx[iPlane]
+            nodeX = self.nodeX[iPlane]
+            ##### generate quadrature points
+            if quadType.lower() in ('gauss', 'g'):
+                offsets, weights = roots_legendre(Qord)
+            elif quadType.lower() in ('uniform', 'u'):
+                offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
+                weights = np.repeat(1., Qord)
+            
+            offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
+            weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
+            quads = ( np.indices([NQX, NQY], dtype='float').T.
+                      reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
+            quadWeights = np.repeat(1., len(quads))
+            
+            for i in range(ndim):
+                quads = np.concatenate( 
+                    [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
+                quadWeights = np.concatenate(
+                    [quadWeights * weight for weight in weights[i]] )
+            phiX = quads[:,0] / dx
+            quads += [nodeX, 0]
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, self.nodeX[iPlane+1])
+            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
+            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
+            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            
+            gradX = 1/dx
+            gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
+                                      ( gradX, 0.),( gradX, 0.)))
+            
+            for iQ, quad in enumerate(quads):
+                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
+                                  (  phiLY[iQ]  , (1-phiX[iQ])),
+                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
+                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                
+                gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
+                                      self.idy[iPlane][indL[iQ]],
+                                      -self.idy[iPlane + 1][indR[iQ]],
+                                      self.idy[iPlane + 1][indR[iQ]])
+                gradphis = gradTemplate * phis
+                
+                # Gradients along the coordinate direction
+                gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
+            
+                phis = np.prod(phis, axis=1)
+                indices = np.array([indL[iQ] + NY*iPlane,
+                                    (indL[iQ]+1) % NY + NY*iPlane,
+                                    (indR[iQ] + NY*(iPlane+1)) % nNodes,
+                                    ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
+                quadWeight = quadWeights[iQ]
+                self.store.append((indices, phis, gradphis, quadWeight))
+                # self.areas[indices] += quadWeight
+                # self.xis[indices] -= gradphis * quadWeight
+                self.u_weights[indices] += quadWeight * phis
+                
+                wg[index:index+8] = quadWeight * gradphis.T.ravel()
+                ri[index:index+4] = indices
+                ri[index+4:index+8] = indices + self.nNodes
+                ci[index:index+8] = iQ + iPlane*nQuads
+                index += 8
+                
+                self.gradphiSums[indices] += gradphis * quadWeight
+                
+                if f is not None:
+                    self.b[indices] += f(quad) * phis * quadWeight
+        
+        self.WG = sp.csr_matrix((wg, (ri, ci)), shape=(2*nNodes, nQuads * NX))
+        # tolerance = 1e-10
+        # self.xi, info = sp_la.lgmres(self.WG, np.zeros(nQuads * NX), x0=np.ones(nQuads * NX),
+        #                              tol=tolerance, atol=tolerance)
+        
+        # _1 = np.ones(nQuads * NX)
+        tol = np.finfo(float).eps
+        maxit = nQuads * NX
+        # self.xi = (_1 - self.WG.T @ sp_la.inv(self.WG@self.WG.T) @ self.WG @ _1)
+        # self.xi = sp_la.lsqr(self.WG, np.zeros(2*self.nNodes), x0=np.ones(nQuads * NX))[0]
+        # self.dxi = sp_la.lsqr(self.WG, -self.WG@np.ones(nQuads * NX), x0=np.zeros(nQuads * NX), iter_lim = 1000)
+        # self.dxi = sp_la.lsqr(self.WG, -self.WG@np.ones(nQuads * NX), x0=np.zeros(nQuads * NX), atol=tol, btol=tol, iter_lim=maxit)
+        self.dxi = sp_la.lsmr(self.WG, -self.WG@np.ones(nQuads * NX), x0=np.zeros(nQuads * NX), atol=tol, btol=tol, maxiter=maxit)
+        self.xi = 1 + self.dxi[0]
+        
+        # self.xis /= self.areas.reshape(-1,1)
+        
+        index = 0
+        for iQ, (indices, phis, gradphis, quadWeight) in enumerate(self.store):
+            testgrads = gradphis * self.xi[iQ]
+            Kdata[index:index+nEntries] = ( quadWeight * 
+                np.ravel( testgrads @ (self.diffusivity @ gradphis.T) ) )
+            Adata[index:index+nEntries] = ( quadWeight *
+                np.outer(np.dot(testgrads, self.velocity), phis).ravel() )
+            if not massLumping:
+                Mdata[index:index+nEntries] = ( quadWeight * 
+                    np.outer(phis, phis).ravel() )
+            row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
+            col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
+            index += nEntries
+            
+            self.gradphiSumsNew[indices] += testgrads * quadWeight
         
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nNodes, nNodes) )

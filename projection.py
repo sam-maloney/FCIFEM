@@ -143,16 +143,11 @@ plt.plot(intraN, order_2, '.:', linewidth=1, label=r'$E_2$ order')
 plt.plot(plt.xlim(), [2, 2], 'k:', linewidth=1, label='Expected')
 plt.ylim(0, 5)
 plt.yticks(np.linspace(0,5,6))
-# plt.ylim(0, 3)
-# plt.yticks([0, 0.5, 1, 1.5, 2, 2.5, 3])
 plt.ylabel(r'Intra-step Order of Convergence')
 lines, labels = ax1.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
 ax2.legend(lines + lines2, labels + labels2, loc='best')
 plt.margins(0,0)
-
-# plt.savefig(f"CD_{kwargs['px']}px_{kwargs['py']}py_notMassLumped_RK4.pdf",
-#     bbox_inches = 'tight', pad_inches = 0)
 
 # plt.savefig("CD_MassLumped_RK4.pdf",
 #     bbox_inches = 'tight', pad_inches = 0)
