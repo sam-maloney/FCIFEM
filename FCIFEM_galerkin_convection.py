@@ -24,14 +24,14 @@ def f(points):
     return np.repeat(0., len(points.reshape(-1,2)))
 
 ##### uniform X spacing
-NX = 6  # number of planes
+NX = 4  # number of planes
 nodeX = 2*np.pi*np.arange(NX+1)/NX
 
 # ##### non-uniform X spacing
 # nodeX = np.array([0., 1, 2.5, 3.5, 5, 2*np.pi])
 # NX = len(nodeX) - 1
 
-NY = 20
+NY = 10
 nodeY = np.tile(np.linspace(0, 1, NY+1), NX+1).reshape(NX+1,-1)
 
 # # Add random perturbation for non-uniform Y spacing
@@ -69,8 +69,8 @@ diffusivity += D_i*np.eye(2)
 
 dt = 0.005
 # nSteps = int(np.rint(np.sum(dx[0:3])/dt))
-nSteps = int(1/dt)
-# nSteps = 1
+# nSteps = int(1/dt)
+nSteps = 0
 
 # ##### generate quadrature points
 # offsets, weights = roots_legendre(Nquad)
@@ -254,20 +254,21 @@ K = M + K - A
 u = np.zeros(nNodes)
 exact_solution = np.zeros(nNodes)
 # u[[8,46,60,70,71,92,93]] = 1
-# Amplitude = 1.0
-# rx = np.pi
-ry = 0.4
-# sigmax = 1.
-sigmay = 0.1
-pi_2 = 0.5*np.pi
-for ix in range(NX):
-    for iy in range(NY):
-        px = nodeX[ix]
-        py = mapping(np.array([[px, nodeY[ix][iy]]]), 0)
-        # u[ix*NY + iy] = Amplitude*np.exp( -0.5*( ((px - rx)/sigmax)**2
-        #                     + ((py - ry)/sigmay)**2 ) ) # Gaussian
-        u[ix*NY + iy] = 0.5*(np.sin(px + pi_2) + 1) * np.exp(-0.5*((py - ry)/sigmay)**2)
-        exact_solution[ix*NY + iy] = 0.5*(np.sin(px + pi_2) + 1) * np.exp(-0.5*((py - (ry+0.1))/sigmay)**2)
+u[[4,14,24,25,26,36,37,38]] = 1
+# # Amplitude = 1.0
+# # rx = np.pi
+# ry = 0.4
+# # sigmax = 1.
+# sigmay = 0.1
+# pi_2 = 0.5*np.pi
+# for ix in range(NX):
+#     for iy in range(NY):
+#         px = nodeX[ix]
+#         py = mapping(np.array([[px, nodeY[ix][iy]]]), 0)
+#         # u[ix*NY + iy] = Amplitude*np.exp( -0.5*( ((px - rx)/sigmax)**2
+#         #                     + ((py - ry)/sigmay)**2 ) ) # Gaussian
+#         u[ix*NY + iy] = 0.5*(np.sin(px + pi_2) + 1) * np.exp(-0.5*((py - ry)/sigmay)**2)
+#         exact_solution[ix*NY + iy] = 0.5*(np.sin(px + pi_2) + 1) * np.exp(-0.5*((py - (ry+0.1))/sigmay)**2)
 
 # minMax = np.empty((nSteps+1, 2))
 # minMax[0] = [0., 1.]
@@ -331,24 +332,41 @@ U = np.sum(phiPlot * u[indPlot], axis=1)
 # maxAbsU = np.max(np.abs(U))
 maxAbsU = 1.
 
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rc("font", **{"family": "serif", "serif": ["Latin Modern Roman"]})
+# mpl.rc("font", **{"family": "serif", "serif": ["Palatino"]})
+mpl.rc("text", usetex = True)
+
 def init_plot():
     global field, fig, ax, X, Y, U, maxAbsU
     fig, ax = plt.subplots()
-    fig.set_size_inches(5,3)
+    fig.set_size_inches(4,2.5)
     field = ax.tripcolor(X, Y, U, shading='gouraud'
                          ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
                          )
     # tri = mpl.tri.Triangulation(X,Y)
     # ax.triplot(tri, 'r-', lw=1)
     x = np.linspace(0, 2*np.pi, 100)
-    for yi in [0.4, 0.5, 0.6]:
+    for yi in [0.4, 0.6]:
         ax.plot(x, [mapping(np.array([[0, yi]]), i) for i in x], 'k')
     for xi in nodeX:
         ax.plot([xi, xi], [0, 1], 'k:')
+        
+    x = np.linspace(np.pi, 1.5*np.pi, 25)
+    y = np.array([mapping(np.array([[0, 0.8]]), i) for i in x])
+    x = np.concatenate((x, np.flip(x), np.array([x[0]])))
+    y = np.concatenate((y, np.flip(y) + 0.2, np.array([y[0]])))
+    ax.plot(x, y, 'k')
+    plt.text(3.25, 0.84, 'partition\nof unity')
+    plt.arrow(1.25*np.pi, 0.81, 0., -0.19, head_width=0.1, head_length=0.05, color='black')
     # ax.plot(X[np.argmax(U)], Y[np.argmax(U)],  'g+', markersize=10)
-    plt.colorbar(field)
-    plt.xlabel(r'$x$')
-    plt.ylabel(r'$y$', rotation=0)
+    cbar = plt.colorbar(field)
+    cbar.set_label(r'$\phi(\mathbf{x})$', rotation=0)
+    # plt.xlabel(r'$x$')
+    # plt.ylabel(r'$y$', rotation=0)
+    # ax.set_ylabel(r'$y$', rotation=0, loc='top')
+    plt.text(-1.1, 0.49, r'$x_\perp$')
+    plt.text(6.7, -0.08, r'$\zeta$')
     plt.xticks(np.linspace(0, 2*np.pi, 7), 
         ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
     plt.margins(0,0)

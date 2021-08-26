@@ -48,6 +48,36 @@ t_setup_p1_sin = np.array([1.20946600e-01, 4.26536300e-01, 1.70480300e+00, 6.399
 t_solve_p1_sin = np.array([2.05040001e-03, 6.14400001e-03, 9.41030000e-03, 2.37355000e-02,
         7.34108000e-02, 2.86898700e-01, 2.22506250e+00])
 
+# Sinusoidal mapping, 0.1 perturbation, Qord=3, ConservativePoint VCI
+E_2_p1_sin_CP = np.array([1.72049530e-03, 1.74932219e-03, 4.99569777e-04, 1.25227649e-04,
+       3.12106760e-05, 7.83296679e-06, np.nan])
+E_inf_p1_sin_CP = np.array([3.94509620e-03, 3.92583363e-03, 1.17370148e-03, 2.89495746e-04,
+       7.36176515e-05, 1.76152918e-05, np.nan])
+t_setup_p1_sin_CP = np.array([1.14400500e-01, 5.64714000e-01, 3.02665540e+00, 2.56724059e+01,
+       2.59681130e+02, np.nan, np.nan])
+t_solve_p1_sin_CP = np.array([1.57389999e-03, 4.82690001e-03, 8.23490000e-03, 1.76809000e-02,
+       5.92375000e-02, np.nan, np.nan])
+
+# Sinusoidal mapping, 0.1 perturbation, Qord=3, ConservativeCell VCI
+E_2_p1_sin_CC = np.array([1.62244282e-03, 1.78174990e-03, 5.05333848e-04, 1.25074630e-04,
+       3.11606360e-05, 7.84181311e-06, np.nan])
+E_inf_p1_sin_CC = np.array([3.74952526e-03, 4.15017968e-03, 1.22581638e-03, 2.90684750e-04,
+       7.37685993e-05, 1.78511294e-05, np.nan])
+t_setup_p1_sin_CC = np.array([1.18314700e-01, 5.29194400e-01, 2.39201140e+00, 1.49330466e+01,
+       1.26001360e+02, 1.01552816e+03, np.nan])
+t_solve_p1_sin_CC = np.array([1.49850000e-03, 4.63169999e-03, 8.30550000e-03, 1.66261000e-02,
+       6.22830000e-02, 2.96640500e-01, np.nan])
+
+# Sinusoidal mapping, 0.1 perturbation, Qord=3, ConservativeNode VCI
+E_2_p1_sin_CN = np.array([1.19386387e-03, 1.83689078e-03, 5.13330850e-04, 1.26876346e-04,
+       3.14171418e-05, 8.74830802e-06, 5.46806186e-06])
+E_inf_p1_sin_CN = np.array([2.71166000e-03, 4.11920389e-03, 1.29610762e-03, 3.09127378e-04,
+       8.98967456e-05, 4.29242666e-05, 4.33876708e-04])
+t_setup_p1_sin_CN = np.array([1.68636100e-01, 6.98860100e-01, 2.58184350e+00, 9.98467950e+00,
+       4.09186959e+01, 1.63121791e+02, 6.49763509e+02])
+t_solve_p1_sin_CN = np.array([2.021000e-03, 5.128700e-03, 8.931900e-03, 1.908220e-02,
+       5.747630e-02, 3.726076e-01, 2.3548181e+00])
+
 # Sinusoidal mapping, 0.1 perturbation, Qord=3, Linear VCI
 E_2_p1_sin_L = np.array([1.70905263e-03, 1.71208435e-03, 4.99655257e-04, 1.25161605e-04,
         3.09979365e-05, 8.66766800e-06, 3.38132213e-06])
@@ -94,11 +124,11 @@ E_inf_p1_str_L = np.array([7.00280166e-03, 2.99459433e-03, 1.15398586e-03, 4.174
 
 ##### Begin Plotting Routines #####
 
-from matplotlib import rcParams
-rcParams['pdf.fonttype'] = 42
-mpl.rc("font", **{"family": "serif", "serif": ["latin modern"]})
+# from matplotlib import rcParams
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rc("font", **{"family": "serif", "serif": ["Latin Modern Roman"]})
 # mpl.rc("font", **{"family": "serif", "serif": ["Palatino"]})
-# mpl.rc("text", usetex = True)
+mpl.rc("text", usetex = True)
 
 # clear the current figure, if opened, and set parameters
 fig = plt.gcf()
@@ -118,33 +148,33 @@ plt.subplots_adjust(hspace = 0.5, wspace = 0.5)
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 axL1 = plt.subplot(121)
-plt.loglog(NX_array, E_inf_u_str, '.-', label=r'Str/Uniform')
-plt.loglog(NX_array, E_inf_u_sin, '.-', label=r'Sin/Uniform')
-plt.loglog(NX_array, E_inf_p1_str, '.-', label=r'Str/10% pert')
-plt.loglog(NX_array, E_inf_p1_sin, '.-', label=r'Sin/10% pert')
+# plt.loglog(NX_array, E_2_u_str, '.-', label=r'Str/Uniform')
+plt.loglog(NX_array, E_2_u_sin, '.-', label=r'Uniform')
+# plt.loglog(NX_array, E_2_p1_str, '.-', label=r'Str/10% pert')
+plt.loglog(NX_array, E_2_p1_sin, '.-', label=r'10\% perturbation')
 plt.minorticks_off()
 plt.ylim(top=1.5e-2)
 plt.xticks(NX_array, NX_array)
 plt.xlabel(r'$NX$')
-plt.ylabel(r'$|E_\infty|$', rotation=0, labelpad=10)
-plt.title('Quadrature Order = 3')
+plt.ylabel(r'$|E_2|$', rotation=0, labelpad=10)
+plt.title('Uniform vs. Perturbed Grid')
 
 # plot the intra-step order of convergence
 axL2 = axL1.twinx()
 logN = np.log(NX_array)
 intraN = np.logspace(start+0.5, stop-0.5, num=stop-start, base=2.0)
-logE_str = np.log(E_inf_u_str)
-order_str = (logE_str[0:-1] - logE_str[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_str, '.:', linewidth=1, label=r'Str/Uniform order')
-logE_sin = np.log(E_inf_u_sin)
+# logE_str = np.log(E_2_u_str)
+# order_str = (logE_str[0:-1] - logE_str[1:])/(logN[1:] - logN[0:-1])
+# plt.plot(intraN, order_str, '.:', linewidth=1, label=r'Str/Uniform order')
+logE_sin = np.log(E_2_u_sin)
 order_sin = (logE_sin[0:-1] - logE_sin[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_sin, '.:', linewidth=1, label=r'Sin/Uniform order')
-logE_p1_str = np.log(E_inf_p1_str)
-order_p1_str = (logE_p1_str[0:-1] - logE_p1_str[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_str, '.:', linewidth=1, label=r'Str/10% pert order')
-logE_p1_sin = np.log(E_inf_p1_sin)
+plt.plot(intraN, order_sin, '.:', linewidth=1, label=r'Uniform order')
+# logE_p1_str = np.log(E_2_p1_str)
+# order_p1_str = (logE_p1_str[0:-1] - logE_p1_str[1:])/(logN[1:] - logN[0:-1])
+# plt.plot(intraN, order_p1_str, '.:', linewidth=1, label=r'Str/10% pert order')
+logE_p1_sin = np.log(E_2_p1_sin)
 order_p1_sin = (logE_p1_sin[0:-1] - logE_p1_sin[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_sin, '.:', linewidth=1, label=r'Sin/10% pert order')
+plt.plot(intraN, order_p1_sin, '.:', linewidth=1, label=r'10\% pert order')
 
 plt.plot(plt.xlim(), [2, 2], 'k:', linewidth=1, label='Expected ord')
 ordb = 0
@@ -162,32 +192,36 @@ plt.margins(0,0)
 
 # plot the error convergence
 axR1 = plt.subplot(122)
-plt.loglog(NX_array, E_inf_p1_sin, '.-', label=r'Q3')
-plt.loglog(NX_array, E_inf_p1_sin_L, '.-', label=r'Q3 VC1')
-plt.loglog(NX_array, E_inf_p1_sin_Q, '.-', label=r'Q3 VC2')
-plt.loglog(NX_array, E_inf_p1_sin10, '.-', label=r'Q10')
+# plt.loglog(NX_array, E_2_p1_sin, '.-', label=r'Q3')
+plt.loglog(NX_array, E_2_p1_sin10, '.-', label=r'Q10')
+plt.loglog(NX_array, E_2_p1_sin_L, '.-', label=r'Q3 VC1')
+plt.loglog(NX_array, E_2_p1_sin_Q, '.-', label=r'Q3 VC2')
+plt.loglog(NX_array, E_2_p1_sin_CN, '.-', label=r'Q3 VC1-C')
 plt.minorticks_off()
 plt.ylim(top=1.5e-2)
 plt.xticks(NX_array, NX_array)
 plt.xlabel(r'$NX$')
-plt.ylabel(r'$|E_\infty|$', rotation=0, labelpad=10)
-plt.title('Sinusoid w/ 10% pert')
+plt.ylabel(r'$|E_2|$', rotation=0, labelpad=10)
+plt.title(r'Improved Quadrature')
 
 # plot the intra-step order of convergence
 axR2 = axR1.twinx()
 logN = np.log(NX_array)
-logE_p1_sin = np.log(E_inf_p1_sin)
-order_p1_sin = (logE_p1_sin[0:-1] - logE_p1_sin[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_sin, '.:', linewidth=1, label=r'Q3 order')
-logE_p1_sin_L = np.log(E_inf_p1_sin_L)
-order_p1_sin_L = (logE_p1_sin_L[0:-1] - logE_p1_sin_L[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_sin_L, '.:', linewidth=1, label=r'Q3 VC1 order')
-logE_p1_sin_Q = np.log(E_inf_p1_sin_Q)
-order_p1_sin_Q = (logE_p1_sin_Q[0:-1] - logE_p1_sin_Q[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_sin_Q, '.:', linewidth=1, label=r'Q3 VC2 order')
-logE_sin10 = np.log(E_inf_p1_sin10)
+# logE_p1_sin = np.log(E_2_p1_sin)
+# order_p1_sin = (logE_p1_sin[0:-1] - logE_p1_sin[1:])/(logN[1:] - logN[0:-1])
+# plt.plot(intraN, order_p1_sin, '.:', linewidth=1, label=r'Q3 order')
+logE_sin10 = np.log(E_2_p1_sin10)
 order_sin10 = (logE_sin10[0:-1] - logE_sin10[1:])/(logN[1:] - logN[0:-1])
 plt.plot(intraN, order_sin10, '.:', linewidth=1, label=r'Q10 order')
+logE_p1_sin_L = np.log(E_2_p1_sin_L)
+order_p1_sin_L = (logE_p1_sin_L[0:-1] - logE_p1_sin_L[1:])/(logN[1:] - logN[0:-1])
+plt.plot(intraN, order_p1_sin_L, '.:', linewidth=1, label=r'Q3 VC1 order')
+logE_p1_sin_Q = np.log(E_2_p1_sin_Q)
+order_p1_sin_Q = (logE_p1_sin_Q[0:-1] - logE_p1_sin_Q[1:])/(logN[1:] - logN[0:-1])
+plt.plot(intraN, order_p1_sin_Q, '.:', linewidth=1, label=r'Q3 VC2 order')
+logE_p1_sin_CN = np.log(E_2_p1_sin_CN)
+order_p1_sin_CN = (logE_p1_sin_CN[0:-1] - logE_p1_sin_CN[1:])/(logN[1:] - logN[0:-1])
+plt.plot(intraN, order_p1_sin_CN, '.:', linewidth=1, label=r'Q3 VC1-C order')
 
 plt.plot(plt.xlim(), [2, 2], 'k:', linewidth=1, label='Expected ord')
 ordb = 0
@@ -203,4 +237,4 @@ leg = axR2.legend(lines, labels, loc='lower left')
 # leg = axR2.legend(lines + [lines2[-1]], labels + [labels2[-1]], loc='lower left')
 plt.margins(0,0)
 
-# plt.savefig("Poisson_conv_all.pdf", bbox_inches = 'tight', pad_inches = 0)
+plt.savefig("Poisson_conv_all_VCI.pdf", bbox_inches = 'tight', pad_inches = 0)

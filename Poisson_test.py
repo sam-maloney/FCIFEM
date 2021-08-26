@@ -35,7 +35,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 2
-stop = 7
+stop = 6
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -57,7 +57,9 @@ for iN, NX in enumerate(NX_array):
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
+    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
@@ -67,8 +69,11 @@ for iN, NX in enumerate(NX_array):
     sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
                                      massLumping=False)
     
-    dxi.append(sim.dxi[1:])
-    
+    try:
+        dxi.append(sim.xi[1:])
+    except:
+        pass
+
     ##### Enforce exact solution constraints directly #####
     
     # sim.K.data[0] = 1.
@@ -101,13 +106,6 @@ for iN, NX in enumerate(NX_array):
             sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
             sim.K[n,n] = 1.
             sim.b[n] = 0.
-    
-    ##### Enforce exact solution constraints using Lagrange multipliers #####
-    ##### Only origin constrained currently #####
-    # G = sp.csr_matrix( (np.ones(1), (np.array([0]), np.array([0]))),
-    #                     shape=(sim.nNodes, 1) )
-    # sim.K = sp.bmat([[sim.K, G], [G.T, None]], format='csr')
-    # sim.b = np.concatenate(( sim.b, np.zeros(1) ))
     
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]} s')
@@ -165,8 +163,8 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-field = ax1.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u - uExact, shading='gouraud'
+field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+# field = ax1.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u - uExact, shading='gouraud'
                      ,cmap='seismic', vmin=vmin, vmax=vmax
                      )
 x = np.linspace(0, sim.nodeX[-1], 100)
@@ -303,15 +301,25 @@ plt.margins(0,0)
 # t_solve = np.array([2.09550001e-03, 5.45420000e-03, 9.21269998e-03, 1.78824000e-02,
 #        6.85618000e-02, 7.81468000e-01, 3.26711650e+00])
 
-# # Sinusoidal mapping, 0.1 perturbation, Qord=3, ConservativeLinear VCI (q factor)
-# E_2 = np.array([1.80947020e-03, 1.68888216e-03, 5.04013956e-04, 1.34541034e-04,
-#        4.08225431e-05, 1.93891855e-05])
-# E_inf = np.array([4.33201315e-03, 3.76767606e-03, 1.16614065e-03, 3.05563588e-04,
-#        8.93939982e-05, 4.13415067e-05])
-# t_setup = np.array([1.26310300e-01, 5.70002500e-01, 3.51030320e+00, 3.27278744e+01,
-#        4.45477941e+02, 7.07649247e+03])
-# t_solve = np.array([2.32420000e-03, 4.50639997e-03, 1.00165000e-02, 1.72008999e-02,
-#        6.08993000e-02, 4.80002200e-01])
+# # Sinusoidal mapping, 0.1 perturbation, Qord=3, ConservativePoint VCI
+# E_2 = np.array([1.72049530e-03, 1.74932219e-03, 4.99569777e-04, 1.25227649e-04,
+#        3.12106760e-05, 7.83296679e-06, np.nan])
+# E_inf = np.array([3.94509620e-03, 3.92583363e-03, 1.17370148e-03, 2.89495746e-04,
+#        7.36176515e-05, 1.76152918e-05, np.nan])
+# t_setup = np.array([1.14400500e-01, 5.64714000e-01, 3.02665540e+00, 2.56724059e+01,
+#        2.59681130e+02, np.nan, np.nan])
+# t_solve = np.array([1.57389999e-03, 4.82690001e-03, 8.23490000e-03, 1.76809000e-02,
+#        5.92375000e-02, np.nan, np.nan])
+
+# # Sinusoidal mapping, 0.1 perturbation, Qord=3, ConservativeCell VCI
+# E_2 = np.array([1.62244282e-03, 1.78174990e-03, 5.05333848e-04, 1.25074630e-04,
+#        3.11606360e-05, 7.84181311e-06, np.nan])
+# E_inf = np.array([3.74952526e-03, 4.15017968e-03, 1.22581638e-03, 2.90684750e-04,
+#        7.37685993e-05, 1.78511294e-05, np.nan])
+# t_setup = np.array([1.18314700e-01, 5.29194400e-01, 2.39201140e+00, 1.49330466e+01,
+#        1.26001360e+02, 1.01552816e+03, np.nan])
+# t_solve = np.array([1.49850000e-03, 4.63169999e-03, 8.30550000e-03, 1.66261000e-02,
+#        6.22830000e-02, 2.96640500e-01, np.nan])
 
 # # Straight mapping, 0.1 perturbation, Qord=3, Linear VCI
 # E_2 = np.array([2.83754386e-03, 9.99162755e-04, 2.72950458e-04, 9.22101598e-05,
