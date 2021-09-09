@@ -15,27 +15,57 @@ import fcifem
 
 from timeit import default_timer
 
-mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
+# mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
+mapping = fcifem.LinearMapping(1/(2*np.pi))
 # mapping = fcifem.StraightMapping()
-        
-def f(p):
-    p.shape = (-1,2)
-    return np.sin(p[:,0])*np.sin(2*np.pi*p[:,1])
 
-uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
+class slantedTestProblem:
+    n = 10
+    p2 = np.pi**2
+    C = 0.5/(8*p2*n-(4*p2+(4*p2+1)*n**2)**2/(8*p2*n))
+    # C = 4*n*p2 / ((8*p2*n)**2 - (4*p2+4*p2*n**2+100)**2)
+    B = C*(4*np.pi**2+(4*np.pi**2+1)*n**2)/(8*np.pi**2*n)
+    A = 1/(2*(-4*p2-1)*n**2)
+    
+    def __call__(self, p):
+        p.shape = (-1,2)
+        x = p[:,0]
+        y = p[:,1]
+        _2py = 2*np.pi*y
+        return -np.sin(self.n*(_2py - x))*(1 + np.sin(_2py))*0.5
+    
+    def solution(self, p):
+        p.shape = (-1,2)
+        x = p[:,0]
+        y = p[:,1]
+        _2py = 2*np.pi*y
+        n2pyx = self.n*(_2py - x)
+        # n = self.n
+        return self.A*np.sin(n2pyx) + self.B*np.sin(_2py)*np.sin(n2pyx) \
+                                    + self.C*np.cos(_2py)*np.cos(n2pyx)
+        
+f = slantedTestProblem()
+uExactFunc = f.solution
+
+# ##### standard test isotropic test problem
+# def f(p):
+#     p.shape = (-1,2)
+#     return np.sin(p[:,0])*np.sin(2*np.pi*p[:,1])
+
+# uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
 
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.1,
-    'py' : 0.1,
+    'px' : 0.,
+    'py' : 0.,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 2
-stop = 6
+start = 1
+stop = 5
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -51,15 +81,15 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    NY = NX
+    NY = 16*NX
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
+    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
@@ -73,6 +103,10 @@ for iN, NX in enumerate(NX_array):
         dxi.append(sim.xi[1:])
     except:
         pass
+    
+    # sim.K.data[0] = 1.
+    # sim.K.data[1:sim.K.indptr[1]] = 0.
+    # sim.b[0] = uExactFunc(sim.nodes[0])
 
     ##### Enforce exact solution constraints directly #####
     
@@ -105,7 +139,7 @@ for iN, NX in enumerate(NX_array):
         if node.prod() == 0.:
             sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
             sim.K[n,n] = 1.
-            sim.b[n] = 0.
+            sim.b[n] = uExactFunc(sim.nodes[n])
     
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]} s')
@@ -152,13 +186,13 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 sim.generatePlottingPoints(nx=1, ny=1)
 sim.computePlottingSolution()
 
-vmin = np.min(sim.U)
-vmax = np.max(sim.U)
+# vmin = np.min(sim.U)
+# vmax = np.max(sim.U)
 
 exactSol = uExactFunc(np.vstack((sim.X,sim.Y)).T)
 error = sim.U - exactSol
-# maxAbsErr = np.max(np.abs(error))
-maxAbsErr = np.max(np.abs(sim.u - uExact))
+maxAbsErr = np.max(np.abs(error))
+# maxAbsErr = np.max(np.abs(sim.u - uExact))
 vmin = -maxAbsErr
 vmax = maxAbsErr
 

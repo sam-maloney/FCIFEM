@@ -87,7 +87,7 @@ class StraightMapping(Mapping):
 
     def __call__(self, points, x=0.):
         points.shape = (-1, 2)
-        return points[:,1]
+        return points[:,1] % 1
     
     def deriv(self, points):
         points.shape = (-1, 2)
@@ -96,6 +96,26 @@ class StraightMapping(Mapping):
     def theta(self, points):
         points.shape = (-1, 2)
         return np.repeat(0., len(points))
+
+class LinearMapping(Mapping):
+    @property
+    def name(self): 
+        return 'linear'
+    
+    def __init__(self, slope):
+        self.slope = slope
+
+    def __call__(self, points, x=0.):
+        points.shape = (-1, 2)
+        return (points[:,1] + self.slope*(x - points[:,0])) % 1
+    
+    def deriv(self, points):
+        points.shape = (-1, 2)
+        return np.repeat(self.slope, len(points))
+    
+    def theta(self, points):
+        points.shape = (-1, 2)
+        return np.repeat(np.arctan(self.slope), len(points))
 
 class SinusoidalMapping(Mapping):
     @property
