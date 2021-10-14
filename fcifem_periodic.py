@@ -24,14 +24,14 @@ class Mapping(metaclass=ABCMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def __call__(self, points, zeta=0.):
+    def __call__(self, points, x=0.):
         """Compute mapped y-coordinates from all points to given x-coordinate
 
         Parameters
         ----------
         points : numpy.ndarray, shape=(n,ndim)
             (x,y) coordinates of starting points.
-        zeta : float
+        x : float
             x-coordinate value of plane to which points should be mapped.
 
         Returns
@@ -59,6 +59,7 @@ class Mapping(metaclass=ABCMeta):
         """
         raise NotImplementedError
     
+    @abstractmethod
     def theta(self, points):
         """Compute angle of mapping function from +x-axis at given points.
 
@@ -73,17 +74,17 @@ class Mapping(metaclass=ABCMeta):
             Angles of mapping function from +x-axis evaluated at all points.
 
         """
-        return np.arctan(self.deriv(points))
+        raise NotImplementedError
     
-    def __repr__(self):
-        return f"{self.__class__.__name__}()"
+    # def __repr__(self):
+    #     return f"{self.__class__.__name__}"
 
 class StraightMapping(Mapping):
     @property
     def name(self): 
         return 'straight'
 
-    def __call__(self, points, zeta=0.):
+    def __call__(self, points, x=0.):
         points.shape = (-1, 2)
         return points[:,1] % 1
     
@@ -103,37 +104,17 @@ class LinearMapping(Mapping):
     def __init__(self, slope):
         self.slope = slope
 
-    def __call__(self, points, zeta=0.):
+    def __call__(self, points, x=0.):
         points.shape = (-1, 2)
-        return (points[:,1] + self.slope*(zeta - points[:,0]))
+        return (points[:,1] + self.slope*(x - points[:,0])) % 1
     
     def deriv(self, points):
         points.shape = (-1, 2)
         return np.repeat(self.slope, len(points))
     
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.slope})"
-    
-class QuadraticMapping(Mapping):
-    @property
-    def name(self): 
-        return 'linear'
-    
-    def __init__(self, a, b=0.):
-        self.a = a
-        self.b = b
-
-    def __call__(self, points, zeta=0.):
+    def theta(self, points):
         points.shape = (-1, 2)
-        x = points[:,0]
-        return (points[:,1] + self.a*(zeta**2 - x**2) + self.b*(zeta - x))
-    
-    def deriv(self, points):
-        points.shape = (-1, 2)
-        return 2*self.a*points[:,0] + self.b
-    
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.a}, {self.b})"
+        return np.repeat(np.arctan(self.slope), len(points))
 
 class SinusoidalMapping(Mapping):
     @property
@@ -144,62 +125,21 @@ class SinusoidalMapping(Mapping):
         self.A = amplitude
         self.phase = phase
 
-    def __call__(self, points, zeta=0.):
+    def __call__(self, points, x=0.):
         points.shape = (-1, 2)
         offsets = points[:,1] - self.A*np.sin(points[:,0] - self.phase)
-        return (self.A*np.sin(zeta - self.phase) + offsets)
+        return (self.A*np.sin(x - self.phase) + offsets) % 1 % 1
     
     def deriv(self, points):
         points.shape = (-1, 2)
         return self.A*np.cos(points[:,0] - self.phase)
     
+    def theta(self, points):
+        points.shape = (-1, 2)
+        return np.arctan(self.A*np.cos(points[:,0] - self.phase))
+    
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.A}, {self.phase})"
-
-
-class BoundaryCondition(metaclass=ABCMeta):
-    @property
-    @abstractmethod
-    def name(self): 
-        raise NotImplementedError
-    
-    def __init__(self, sim):
-        self.sim = sim
-    
-    @abstractmethod
-    def __call__(self, points, iPlane):
-        raise NotImplementedError
-    
-class PeriodicBoundaryCondition(BoundaryCondition):
-    @property
-    def name(self): 
-        return 'periodic'
-    
-    def __call__(self, points, iPlane):
-        isBoundary = np.full(len(points), False)
-        mapL = self.sim.mapping(points, self.sim.nodeX[iPlane]) % 1
-        mapR = self.sim.mapping(points, self.sim.nodeX[iPlane+1]) % 1
-        return (isBoundary, mapL, isBoundary, mapR)
-    
-class DirichletBoundaryCondition(BoundaryCondition):
-    @property
-    def name(self): 
-        return 'Dirichlet'
-    
-    def __init(self, sim, boundaryFunction):
-        super().__init__(sim)
-        self.B = boundaryFunction
-    
-    def __call__(self, points, iPlane):
-        zetaMinus = self.sim.nodeX[iPlane]
-        zetaPlus = self.sim.nodeX[iPlane+1]
-        maps = self.B(points, zetaMinus, zetaPlus)
-
-        maps[1][~maps[0]] = self.sim.mapping(points[~maps[0]], zetaMinus)
-        maps[3][~maps[2]] = self.sim.mapping(points[~maps[2]], zetaPlus)
-
-        return maps
-
+        return f"{self.__class__.__name__}({self.A},{self.phase})"
 
 class FciFemSim(metaclass=ABCMeta):
     """Class for flux-coordinate independent FEM (FCIFEM) method.
@@ -248,7 +188,7 @@ class FciFemSim(metaclass=ABCMeta):
     M : scipy.sparse.csr_matrix
         The mass matrix from the time derivative
     b : numpy.ndarray, shape=(nNodes,)
-        RHS forcing vector generated from source/sink function f.
+        RHS forcing vector generated from forcing function f.
     integrator : Integrator
         Object defining time-integration scheme to be used. 
     """
@@ -439,13 +379,10 @@ class FciFemSim(metaclass=ABCMeta):
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
 
-            # maps = boundary(quads, iPlane)
-            # maps = (isBoundaryL, mapL, isBoundaryR, mapR)
-            
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -590,8 +527,8 @@ class FciFemSim(metaclass=ABCMeta):
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -746,7 +683,7 @@ class FciFemSim(metaclass=ABCMeta):
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
+            mapL = self.mapping(quads, nodeX)
             mapR = self.mapping(quads, nodeX1)
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
@@ -915,8 +852,8 @@ class FciFemSim(metaclass=ABCMeta):
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -1180,8 +1117,8 @@ class FciFemSim(metaclass=ABCMeta):
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -1361,8 +1298,8 @@ class FciFemSim(metaclass=ABCMeta):
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.mapping(quads, nodeX)
+            mapR = self.mapping(quads, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]

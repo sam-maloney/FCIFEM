@@ -9,7 +9,10 @@ from utils.showdata import showdata
 
 from scipy.special import roots_legendre
 from scipy.interpolate import RectBivariateSpline
-from scipy.fft import fft, fftshift, fftfreq
+try:
+    from scipy.fft import fft, fftshift, fftfreq
+except(ModuleNotFoundError):
+    from scipy.fftpack import fft, fftshift, fftfreq
 import gc
 import sparse
 import scipy.integrate
@@ -34,7 +37,7 @@ ndim = 2
 alpha = 1.0    # Adiabaticity (~conductivity)
 kappa = 0.0    # Density gradient drive
 
-YBC = 'p' # 'dirichlet' or 'periodic' (or 'd' and 'p')
+YBC = 'd' # 'dirichlet' or 'periodic' (or 'd' and 'p')
 if not (YBC.lower().startswith('d') or YBC.lower().startswith('p')):
     raise SystemExit(f"Unknown y boundary condition: '{YBC}'")
 
@@ -130,7 +133,7 @@ for iPlane in range(NX):
                                (indL[iQ]+1) % NY + NY*iPlane,
                                (indR[iQ] + NY*(iPlane+1)) % nNodes,
                                ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
-        gradphis = np.vstack((grad          , grad * [1, -1], 
+        gradphis = np.vstack((grad          , grad * [ 1, -1], 
                               grad * [-1, 1], grad * [-1, -1])) * phis
         phis = np.prod(phis, axis=1)
         Kdata[index:index+nEntries] = quadWeights[iQ] * \

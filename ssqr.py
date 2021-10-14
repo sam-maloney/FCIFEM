@@ -15,14 +15,21 @@ cppyy.cppdef(r"""
               #define SUITESPARSE_GPU_EXTERN_ON
               #define CHOLMOD_H
               """)
-cppyy.c_include('suitesparse\\SuiteSparseQR_definitions.h')
-cppyy.c_include('suitesparse\\SuiteSparse_config.h')
+              
+try:
+    cppyy.c_include('suitesparse\\SuiteSparseQR_definitions.h')
+    prefix = 'suitesparse\\'
+except(ImportError):
+    cppyy.c_include('SuiteSparseQR_definitions.h')
+    prefix = ''    
+
+cppyy.c_include(prefix + 'SuiteSparse_config.h')
 suffixes = ['io64', 'config', 'core', 'check', 'cholesky', 'matrixops',
             'modify', 'camd', 'partition', 'supernodal']
 for suffix in suffixes:
-    cppyy.c_include('suitesparse\\cholmod_' + suffix + '.h')
-cppyy.include('suitesparse\\SuiteSparseQR.hpp')
-cppyy.include('suitesparse\\SuiteSparseQR_C.h')
+    cppyy.c_include(prefix + 'cholmod_' + suffix + '.h')
+cppyy.include(prefix + 'SuiteSparseQR.hpp')
+cppyy.include(prefix + 'SuiteSparseQR_C.h')
 cppyy.load_library('cholmod')
 cppyy.load_library('spqr')
 ## Initialize cholmod common
