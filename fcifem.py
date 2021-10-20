@@ -165,9 +165,14 @@ class BoundaryCondition(metaclass=ABCMeta):
     
     def __init__(self, sim):
         self.sim = sim
-    
+        self.nNodes = self.NXnodes * self.NYnodes
+        
     @abstractmethod
     def __call__(self, points, iPlane):
+        raise NotImplementedError
+    
+    @abstractmethod
+    def computeNodes(self):
         raise NotImplementedError
     
 class PeriodicBoundaryCondition(BoundaryCondition):
@@ -175,18 +180,29 @@ class PeriodicBoundaryCondition(BoundaryCondition):
     def name(self): 
         return 'periodic'
     
+    def __init__(self, sim):
+        self.NXnodes = sim.NX
+        self.NYnodes = sim.NY
+        super().__init__(sim)
+    
     def __call__(self, points, iPlane):
         isBoundary = np.full(len(points), False)
         mapL = self.sim.mapping(points, self.sim.nodeX[iPlane]) % 1
         mapR = self.sim.mapping(points, self.sim.nodeX[iPlane+1]) % 1
         return (isBoundary, mapL, isBoundary, mapR)
     
+    def computeNodes(self):
+        return np.vstack( (np.repeat(self.sim.nodeX[:-1], self.sim.NY),
+                                self.sim.nodeY[:-1,:-1].ravel()) ).T
+    
 class DirichletBoundaryCondition(BoundaryCondition):
     @property
     def name(self): 
         return 'Dirichlet'
     
-    def __init(self, sim, boundaryFunction):
+    def __init__(self, sim, boundaryFunction):
+        self.NXnodes = sim.NX + 1
+        self.NYnodes = sim.NY + 1
         super().__init__(sim)
         self.B = boundaryFunction
     
@@ -194,11 +210,13 @@ class DirichletBoundaryCondition(BoundaryCondition):
         zetaMinus = self.sim.nodeX[iPlane]
         zetaPlus = self.sim.nodeX[iPlane+1]
         maps = self.B(points, zetaMinus, zetaPlus)
-
         maps[1][~maps[0]] = self.sim.mapping(points[~maps[0]], zetaMinus)
         maps[3][~maps[2]] = self.sim.mapping(points[~maps[2]], zetaPlus)
-
         return maps
+
+    def computeNodes(self):
+        return np.vstack( (np.repeat(self.sim.nodeX, self.sim.NY + 1),
+                                self.sim.nodeY.ravel()) ).T
 
 
 class FciFemSim(metaclass=ABCMeta):
@@ -313,11 +331,10 @@ class FciFemSim(metaclass=ABCMeta):
         py /= NY
         self.nodeY[:-1,1:-1] += rng.uniform(-py, py, self.nodeY[:-1,1:-1].shape)
         self.nodeY[-1] = self.nodeY[0]
-        self.nNodes = NX*NY
         self.dx = self.nodeX[1:] - self.nodeX[0:-1]
         self.idy = 1. / (self.nodeY[:,1:] - self.nodeY[:,:-1])
     
-    def setInitialConditions(self, u0, mapped=True):
+    def setInitialConditions(self, u0, mapped=True, BC='periodic'):
         """Initialize the nodal coefficients for the given IC.
         
         Parameters
@@ -330,20 +347,29 @@ class FciFemSim(metaclass=ABCMeta):
         mapped : bool, optional
             Whether mapping is applied to node positions before applying ICs.
             The default is True.
+        BC : {BoundaryCondition, string}, optional
+            Either an object of type BoundaryCondition, or string 'periodic'.
+            The default is 'periodic'.
 
         Returns
         -------
         None.
 
         """
+        if isinstance(BC, BoundaryCondition):
+             self.BC = BC
+        elif BC.lower() in ('periodic', 'p'):
+            self.BC = PeriodicBoundaryCondition(self)
+        else:
+            raise SystemExit(f"Unkown boundary condition: {BC}")
+        self.nNodes = self.BC.nNodes
         if isinstance(u0, np.ndarray) and u0.shape == (self.nNodes,):
             self.u0 = u0
             self.u = u0.copy()
             self.u0func = None
         elif callable(u0):
             self.u0func = u0
-            self.nodes = np.vstack( (np.repeat(self.nodeX[:-1], self.NY),
-                                self.nodeY[:-1,:-1].ravel()) ).T
+            self.nodes = BC.computeNodes()
             self.nodesMapped = self.nodes.copy()
             self.nodesMapped[:,1] = self.mapping(self.nodes, 0)
             if mapped:
@@ -439,7 +465,7 @@ class FciFemSim(metaclass=ABCMeta):
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
 
-            # maps = boundary(quads, iPlane)
+            maps = self.BC(quads, iPlane)
             # maps = (isBoundaryL, mapL, isBoundaryR, mapR)
             
             phiX = quads[:,0] / dx

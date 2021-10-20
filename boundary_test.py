@@ -44,15 +44,16 @@ class TestProblem:
         p.shape = (-1,2)
         x = p[:,0]
         y = p[:,1]
-        zetaL = np.sqrt(x**2 - self.invA*y)
-        zetaR = np.sqrt(x**2 + self.invA*(1 - y))
-        return zetaL, zetaR
+        zetaBottom = np.sqrt(x**2 - self.invA*y)
+        zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
+        zetaBottom[zetaBottom < zetaMinus] = np.nan
+        zetaBottom[zetaBottom > zetaPlus] = np.nan
+        zetaTop[zetaTop < zetaMinus] = np.nan
+        zetaTop[zetaTop > zetaPlus] = np.nan
+        return zetaBottom, zetaTop
         
 f = TestProblem()
 uExactFunc = f.solution
-
-
-# BC = fcifem.DirichletBoundaryCondition(sim, f.boundaryFunction)
 
 # ##### standard test isotropic test problem
 # def f(p):
@@ -72,7 +73,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 2
-stop = 6
+stop = 2
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -92,15 +93,15 @@ for iN, NX in enumerate(NX_array):
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
     
+    BC = fcifem.DirichletBoundaryCondition(sim, f.boundaryFunction)
+    sim.setInitialConditions(f, BC=BC)
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
-    
-    sim.setInitialConditions(f)
     
     # Assemble the mass matrix and forcing term
     sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
@@ -110,43 +111,6 @@ for iN, NX in enumerate(NX_array):
         dxi.append(sim.xi[1:])
     except:
         pass
-    
-    # sim.K.data[0] = 1.
-    # sim.K.data[1:sim.K.indptr[1]] = 0.
-    # sim.b[0] = uExactFunc(sim.nodes[0])
-
-    ##### Enforce exact solution constraints directly #####
-    
-    # sim.K.data[0] = 1.
-    # sim.K.data[1:sim.K.indptr[1]] = 0.
-    # sim.b[0] = 0.
-    
-    # n = int(NY/2)
-    # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    # sim.K[n,n] = 1.
-    # sim.b[n] = 0.
-    
-    # # n = int(NX*NY/2)
-    # # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    # # sim.K[n,n] = 1.
-    # # sim.b[n] = 0.
-    
-    # n = int(NX*NY*3/4)
-    # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    # sim.K[n,n] = 1.
-    # sim.b[n] = 0.
-    
-    # Centre point
-    n = int(NX*NY/2 + NY/2)
-    sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    sim.K[n,n] = 1.
-    sim.b[n] = uExactFunc(sim.nodes[n])
-    
-    for n, node in enumerate(sim.nodes):
-        if node.prod() == 0.:
-            sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-            sim.K[n,n] = 1.
-            sim.b[n] = uExactFunc(sim.nodes[n])
     
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]} s')
