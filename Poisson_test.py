@@ -85,15 +85,15 @@ for iN, NX in enumerate(NX_array):
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
     
-    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
-    
     sim.setInitialConditions(f)
+    
+    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
     # Assemble the mass matrix and forcing term
     sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
@@ -203,7 +203,7 @@ field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
                      )
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.4, 0.5, 0.6]:
-    ax1.plot(x, [mapping(np.array([[0, yi]]), i) for i in x], 'k')
+    ax1.plot(x, [sim.BC.mapping(np.array([[0, yi]]), i) for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')
 # ax.plot(sim.X[np.argmax(sim.U)], sim.Y[np.argmax(sim.U)],

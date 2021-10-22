@@ -174,6 +174,9 @@ class BoundaryCondition(metaclass=ABCMeta):
     @abstractmethod
     def computeNodes(self):
         raise NotImplementedError
+        
+    def mapping(self, points, zeta=0.):
+        return self.sim.mapping(points, zeta)
     
 class PeriodicBoundaryCondition(BoundaryCondition):
     @property
@@ -195,6 +198,9 @@ class PeriodicBoundaryCondition(BoundaryCondition):
         return np.vstack( (np.repeat(self.sim.nodeX[:-1], self.sim.NY),
                                 self.sim.nodeY[:-1,:-1].ravel()) ).T
     
+    def mapping(self, points, zeta=0.):
+        return self.sim.mapping(points, zeta) % 1
+    
 class DirichletBoundaryCondition(BoundaryCondition):
     @property
     def name(self): 
@@ -209,10 +215,12 @@ class DirichletBoundaryCondition(BoundaryCondition):
     def __call__(self, points, iPlane):
         zetaMinus = self.sim.nodeX[iPlane]
         zetaPlus = self.sim.nodeX[iPlane+1]
-        maps = self.B(points, zetaMinus, zetaPlus)
-        maps[1][~maps[0]] = self.sim.mapping(points[~maps[0]], zetaMinus)
-        maps[3][~maps[2]] = self.sim.mapping(points[~maps[2]], zetaPlus)
-        return maps
+        maps = self.B(points)
+        isBoundaryL = (maps[0] > zetaMinus) * (maps[0] < zetaPlus)
+        isBoundaryR = (maps[1] > zetaMinus) * (maps[1] < zetaPlus)
+        maps[0][~isBoundaryL] = self.sim.mapping(points[~isBoundaryL], zetaMinus)
+        maps[1][~isBoundaryR] = self.sim.mapping(points[~isBoundaryR], zetaPlus)
+        return (isBoundaryL, maps[0], isBoundaryR, maps[1])
 
     def computeNodes(self):
         return np.vstack( (np.repeat(self.sim.nodeX, self.sim.NY + 1),
@@ -369,9 +377,9 @@ class FciFemSim(metaclass=ABCMeta):
             self.u0func = None
         elif callable(u0):
             self.u0func = u0
-            self.nodes = BC.computeNodes()
+            self.nodes = self.BC.computeNodes()
             self.nodesMapped = self.nodes.copy()
-            self.nodesMapped[:,1] = self.mapping(self.nodes, 0)
+            self.nodesMapped[:,1] = self.BC.mapping(self.nodes, 0)
             if mapped:
                 self.u = u0(self.nodesMapped)
             else:
@@ -448,6 +456,7 @@ class FciFemSim(metaclass=ABCMeta):
         for iPlane in range(NX):
             dx = self.dx[iPlane]
             nodeX = self.nodeX[iPlane]
+            nodeXp1 = self.nodeX[iPlane + 1]
             ##### generate quadrature points
             if quadType.lower() in ('gauss', 'g', 'gaussian'):
                 offsets, weights = roots_legendre(Qord)
@@ -464,34 +473,39 @@ class FciFemSim(metaclass=ABCMeta):
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
-
-            maps = self.BC(quads, iPlane)
-            # maps = (isBoundaryL, mapL, isBoundaryR, mapR)
             
-            phiX = quads[:,0] / dx
-            quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
-            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
-            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            quads += [self.nodeX[iPlane], 0]
+            (isBoundaryL, mapL, isBoundaryR, mapR) = self.BC(quads, iPlane)
             
-            gradX = 1/dx
-            gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
-                                      ( gradX, 0.),( gradX, 0.)))
+            zetaMinus = np.repeat(nodeX  , nQuads)
+            zetaPlus  = np.repeat(nodeXp1, nQuads)
+            zetaMinus[isBoundaryL] = mapL[isBoundaryL]
+            zetaPlus [isBoundaryR] = mapR[isBoundaryR]
+            rho = (quads[:,0] - zetaMinus) / (zetaPlus - zetaMinus)
+            
+            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1)
+            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1)
+            phiL = np.empty(nQuads)
+            phiR = np.empty(nQuads)
+            phiL[~isBoundaryL] = (mapL[~isBoundaryL] - self.nodeY[iPlane][indL[~isBoundaryL]]) * self.idy[iPlane][indL[~isBoundaryL]]
+            phiR[~isBoundaryR] = (mapR[~isBoundaryR] - self.nodeY[iPlane + 1][indR[~isBoundaryR]]) * self.idy[iPlane + 1][indR[~isBoundaryR]]
+            
+            phiL[isBoundaryL] = (mapL[isBoundaryL] - nodeX) / dx
+            phiR[isBoundaryR] = (mapR[isBoundaryR] - nodeX) / dx
+            
+            gradX = 1 / (zetaPlus - zetaMinus)
             
             for iQ, quad in enumerate(quads):
-                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
-                                  (  phiLY[iQ]  , (1-phiX[iQ])),
-                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
-                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                phis = np.array((((1-phiL[iQ]), (1-rho[iQ])),
+                                 (   phiL[iQ] , (1-rho[iQ])),
+                                 ((1-phiR[iQ]),    rho[iQ] ),
+                                 (   phiR[iQ] ,    rho[iQ] )))
                 
-                gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
-                                      self.idy[iPlane][indL[iQ]],
-                                      -self.idy[iPlane + 1][indR[iQ]],
-                                      self.idy[iPlane + 1][indR[iQ]])
-                gradphis = gradTemplate * phis
+                gradphis = phis * \
+                    np.array(((-gradX[iQ], -self.idy[iPlane][indL[iQ]]),
+                              (-gradX[iQ],  self.idy[iPlane][indL[iQ]]),
+                              ( gradX[iQ], -self.idy[iPlane + 1][indR[iQ]]),
+                              ( gradX[iQ],  self.idy[iPlane + 1][indR[iQ]])))
                 
                 # Gradients along the coordinate direction
                 gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
@@ -614,24 +628,24 @@ class FciFemSim(metaclass=ABCMeta):
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
-            phiX = quads[:,0] / dx
+            rho = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.BC.mapping(quads, nodeX) % 1
+            mapR = self.BC.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            phiL = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiR = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
             
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
             
             for iQ, quad in enumerate(quads):
-                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
-                                  (  phiLY[iQ]  , (1-phiX[iQ])),
-                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
-                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                phis = np.array((((1-phiL[iQ]) , (1-rho[iQ])),
+                                  (  phiL[iQ]  , (1-rho[iQ])),
+                                  ((1-phiR[iQ]),   rho[iQ]  ),
+                                  (  phiR[iQ]  ,   rho[iQ]  )))
                 
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
@@ -770,24 +784,24 @@ class FciFemSim(metaclass=ABCMeta):
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
-            phiX = quads[:,0] / dx
+            rho = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, nodeX1)
+            mapL = self.BC.mapping(quads, nodeX) % 1
+            mapR = self.BC.mapping(quads, nodeX1)
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            phiL = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiR = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
             
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
             
             for iQ, quad in enumerate(quads):
-                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
-                                  (  phiLY[iQ]  , (1-phiX[iQ])),
-                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
-                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                phis = np.array((((1-phiL[iQ]) , (1-rho[iQ])),
+                                  (  phiL[iQ]  , (1-rho[iQ])),
+                                  ((1-phiR[iQ]),   rho[iQ]  ),
+                                  (  phiR[iQ]  ,   rho[iQ]  )))
                 
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
@@ -939,24 +953,24 @@ class FciFemSim(metaclass=ABCMeta):
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
-            phiX = quads[:,0] / dx
+            rho = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.BC.mapping(quads, nodeX) % 1
+            mapR = self.BC.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            phiL = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiR = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
             
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
             
             for iQ, quad in enumerate(quads):
-                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
-                                  (  phiLY[iQ]  , (1-phiX[iQ])),
-                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
-                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                phis = np.array((((1-phiL[iQ]) , (1-rho[iQ])),
+                                  (  phiL[iQ]  , (1-rho[iQ])),
+                                  ((1-phiR[iQ]),   rho[iQ]  ),
+                                  (  phiR[iQ]  ,   rho[iQ]  )))
                 
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
@@ -995,7 +1009,7 @@ class FciFemSim(metaclass=ABCMeta):
                 
                 self.gradphiSums[indices] -= gradphis * quadWeight
         
-        del quads, quadWeights, mapL, mapR, indL, indR, phiLY, phiRY, phiX
+        del quads, quadWeights, mapL, mapR, indL, indR, phiL, phiR, rho
         
         # gd[index:index+nCells] = 1.0
         # ri[index:index+nCells] = 2*nNodes
@@ -1204,24 +1218,24 @@ class FciFemSim(metaclass=ABCMeta):
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
-            phiX = quads[:,0] / dx
+            rho = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.BC.mapping(quads, nodeX) % 1
+            mapR = self.BC.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            phiL = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiR = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
             
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
             
             for iQ, quad in enumerate(quads):
-                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
-                                  (  phiLY[iQ]  , (1-phiX[iQ])),
-                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
-                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                phis = np.array((((1-phiL[iQ]) , (1-rho[iQ])),
+                                  (  phiL[iQ]  , (1-rho[iQ])),
+                                  ((1-phiR[iQ]),   rho[iQ]  ),
+                                  (  phiR[iQ]  ,   rho[iQ]  )))
                 
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
@@ -1385,24 +1399,24 @@ class FciFemSim(metaclass=ABCMeta):
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
-            phiX = quads[:,0] / dx
+            rho = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX) % 1
-            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
+            mapL = self.BC.mapping(quads, nodeX) % 1
+            mapR = self.BC.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            phiL = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiR = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
             
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
             
             for iQ, quad in enumerate(quads):
-                phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
-                                  (  phiLY[iQ]  , (1-phiX[iQ])),
-                                  ((1-phiRY[iQ]),   phiX[iQ]  ),
-                                  (  phiRY[iQ]  ,   phiX[iQ]  )))
+                phis = np.array((((1-phiL[iQ]) , (1-rho[iQ])),
+                                  (  phiL[iQ]  , (1-rho[iQ])),
+                                  ((1-phiR[iQ]),   rho[iQ]  ),
+                                  (  phiR[iQ]  ,   rho[iQ]  )))
                 
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
@@ -1568,18 +1582,18 @@ class FciFemSim(metaclass=ABCMeta):
             points = np.indices((nx, NY*ny + 1), dtype='float') \
                 .reshape(self.ndim, -1).T * [dx/nx, 1/(NY*ny)]
             self.X = np.append(self.X, points[:,0] + nodeX)
-            phiX = points[:,0] / dx
+            rho = points[:,0] / dx
             points += [nodeX, 0]
-            mapL = self.mapping(points, nodeX)
-            mapR = self.mapping(points, self.nodeX[iPlane+1])
+            mapL = self.BC.mapping(points, nodeX)
+            mapR = self.BC.mapping(points, self.nodeX[iPlane+1])
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
-            phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+            phiL = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+            phiR = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
             for iP, point in enumerate(points):
                 self.phiPlot[iPlane*nPointsPerPlane + iP] = (
-                    (1-phiLY[iP]) * (1-phiX[iP]), phiLY[iP] * (1-phiX[iP]),
-                    (1-phiRY[iP]) * phiX[iP]    , phiRY[iP] * phiX[iP] )
+                    (1-phiL[iP]) * (1-rho[iP]), phiL[iP] * (1-rho[iP]),
+                    (1-phiR[iP]) * rho[iP]    , phiR[iP] * rho[iP] )
                 self.indPlot[iPlane*nPointsPerPlane + iP] = (
                     indL[iP] + NY*iPlane,
                     (indL[iP]+1) % NY + NY*iPlane,

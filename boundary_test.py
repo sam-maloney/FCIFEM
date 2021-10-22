@@ -40,16 +40,12 @@ class TestProblem:
         y = p[:,1]
         return x*np.sin(self.n*(y - self.A*x**2))
     
-    def boundaryFunction(self, p, zetaMinus, zetaPlus):
+    def boundaryFunction(self, p):
         p.shape = (-1,2)
         x = p[:,0]
         y = p[:,1]
         zetaBottom = np.sqrt(x**2 - self.invA*y)
         zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
-        zetaBottom[zetaBottom < zetaMinus] = np.nan
-        zetaBottom[zetaBottom > zetaPlus] = np.nan
-        zetaTop[zetaTop < zetaMinus] = np.nan
-        zetaTop[zetaTop > zetaPlus] = np.nan
         return zetaBottom, zetaTop
         
 f = TestProblem()
