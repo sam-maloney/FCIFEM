@@ -69,7 +69,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 2
-stop = 2
+stop = 3
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)

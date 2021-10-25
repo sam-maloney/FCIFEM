@@ -85,6 +85,7 @@ for iN, NX in enumerate(NX_array):
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
+    ##### These require the fcifem_periodic version of the module #####
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
