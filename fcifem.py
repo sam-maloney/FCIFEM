@@ -208,13 +208,14 @@ class DirichletBoundaryCondition(BoundaryCondition):
     def name(self): 
         return 'Dirichlet'
     
-    def __init__(self, sim, boundaryFunction):
+    def __init__(self, sim, g, B):
         self.nXnodes = sim.NX - 1
         self.nYnodes = sim.NY - 1
         super().__init__(sim)
-        self.B = boundaryFunction
+        self.B = B
+        self.g = g
         self.inds = np.empty(4, dtype='int')
-        self.g = np.empty(4)
+        # self.vals = np.empty(4)
     
     def __call__(self, points, iPlane):
         zetaMinus = self.sim.nodeX[iPlane]
@@ -253,6 +254,7 @@ class DirichletBoundaryCondition(BoundaryCondition):
                 self.inds[1] += iPlane*self.nYnodes
             else:
                 self.inds[1] = -1
+                # self.vals[1] = self.g()
         if not isBoundaryR:
             self.inds[3] = np.searchsorted(self.sim.nodeY[iPlane + 1], mapR, side='right')
             if self.inds[3] > 1:
@@ -262,6 +264,7 @@ class DirichletBoundaryCondition(BoundaryCondition):
             else:
                 self.inds[3] = -1
         pass
+        return mapL, mapR, self.inds
 
 
 class FciFemSim(metaclass=ABCMeta):
@@ -512,63 +515,68 @@ class FciFemSim(metaclass=ABCMeta):
                     [quadWeights * weight for weight in weights[i]] )
             
             quads += [self.nodeX[iPlane], 0]
-            (isBoundaryL, mapL, isBoundaryR, mapR) = self.BC(quads, iPlane)
             
-            zetaMinus = np.repeat(nodeX  , nQuads)
-            zetaPlus  = np.repeat(nodeXp1, nQuads)
-            zetaMinus[isBoundaryL] = mapL[isBoundaryL]
-            zetaPlus [isBoundaryR] = mapR[isBoundaryR]
-            rho = (quads[:,0] - zetaMinus) / (zetaPlus - zetaMinus)
-            
-            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1)
-            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1)
-            phiL = np.empty(nQuads)
-            phiR = np.empty(nQuads)
-            phiL[~isBoundaryL] = (mapL[~isBoundaryL] - self.nodeY[iPlane][indL[~isBoundaryL]]) * self.idy[iPlane][indL[~isBoundaryL]]
-            phiR[~isBoundaryR] = (mapR[~isBoundaryR] - self.nodeY[iPlane + 1][indR[~isBoundaryR]]) * self.idy[iPlane + 1][indR[~isBoundaryR]]
-            
-            phiL[isBoundaryL] = (mapL[isBoundaryL] - nodeX) / dx
-            phiR[isBoundaryR] = (mapR[isBoundaryR] - nodeX) / dx
-            
-            gradRho = 1 / (zetaPlus - zetaMinus)
+            if self.BC.name == 'periodic':
+                (isBoundaryL, mapL, isBoundaryR, mapR) = self.BC(quads, iPlane)
+                
+                zetaMinus = np.repeat(nodeX  , nQuads)
+                zetaPlus  = np.repeat(nodeXp1, nQuads)
+                zetaMinus[isBoundaryL] = mapL[isBoundaryL]
+                zetaPlus [isBoundaryR] = mapR[isBoundaryR]
+                rho = (quads[:,0] - zetaMinus) / (zetaPlus - zetaMinus)
+                
+                indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1)
+                indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1)
+                phiL = np.empty(nQuads)
+                phiR = np.empty(nQuads)
+                phiL[~isBoundaryL] = (mapL[~isBoundaryL] - self.nodeY[iPlane][indL[~isBoundaryL]]) * self.idy[iPlane][indL[~isBoundaryL]]
+                phiR[~isBoundaryR] = (mapR[~isBoundaryR] - self.nodeY[iPlane + 1][indR[~isBoundaryR]]) * self.idy[iPlane + 1][indR[~isBoundaryR]]
+                
+                phiL[isBoundaryL] = (mapL[isBoundaryL] - nodeX) / dx
+                phiR[isBoundaryR] = (mapR[isBoundaryR] - nodeX) / dx
+                
+                gradRho = 1 / (zetaPlus - zetaMinus)
             
             for iQ, quad in enumerate(quads):
-                # (inds, isBoundary, g) = self.BC.test(quad, iPlane)
+                if self.BC.name == 'Dirichlet':
+                    mapL, mapR, inds = self.BC.test(quad, iPlane)
+                    
                 
-                phis = np.array((((1-phiL[iQ]), (1-rho[iQ])),
-                                 (   phiL[iQ] , (1-rho[iQ])),
-                                 ((1-phiR[iQ]),    rho[iQ] ),
-                                 (   phiR[iQ] ,    rho[iQ] )))
+                if self.BC.name == 'periodic':
+                    phis = np.array((((1-phiL[iQ]), (1-rho[iQ])),
+                                     (   phiL[iQ] , (1-rho[iQ])),
+                                     ((1-phiR[iQ]),    rho[iQ] ),
+                                     (   phiR[iQ] ,    rho[iQ] )))
+                    
+                    gradphis = phis * np.array((
+                        (-gradRho[iQ], -self.idy[iPlane][indL[iQ]]),
+                        (-gradRho[iQ],  self.idy[iPlane][indL[iQ]]),
+                        ( gradRho[iQ], -self.idy[iPlane + 1][indR[iQ]]),
+                        ( gradRho[iQ],  self.idy[iPlane + 1][indR[iQ]])))
+                    
+                    # Gradients along the coordinate direction
+                    gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
                 
-                gradphis = phis * np.array((
-                    (-gradRho[iQ], -self.idy[iPlane][indL[iQ]]),
-                    (-gradRho[iQ],  self.idy[iPlane][indL[iQ]]),
-                    ( gradRho[iQ], -self.idy[iPlane + 1][indR[iQ]]),
-                    ( gradRho[iQ],  self.idy[iPlane + 1][indR[iQ]])))
-                
-                # Gradients along the coordinate direction
-                gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
-            
-                phis = np.prod(phis, axis=1)
-                indices = np.array([indL[iQ] + NY*iPlane,
-                                    (indL[iQ]+1) % NY + NY*iPlane,
-                                    (indR[iQ] + NY*(iPlane+1)) % nNodes,
-                                    ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
-                Kdata[index:index+nEntries] = ( quadWeights[iQ] * 
-                    np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
-                Adata[index:index+nEntries] = ( quadWeights[iQ] *
-                    np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
-                if not massLumping:
-                    Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
-                        np.outer(phis, phis).ravel() )
-                row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
-                col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
-                
-                self.u_weights[indices] += quadWeights[iQ] * phis
-                
-                index += nEntries
-                if f is not None:
-                    self.b[indices] += f(quad) * phis * quadWeights[iQ]
+                    phis = np.prod(phis, axis=1)
+                    indices = np.array([indL[iQ] + NY*iPlane,
+                                        (indL[iQ]+1) % NY + NY*iPlane,
+                                        (indR[iQ] + NY*(iPlane+1)) % nNodes,
+                                        ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
+                    Kdata[index:index+nEntries] = ( quadWeights[iQ] * 
+                        np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
+                    Adata[index:index+nEntries] = ( quadWeights[iQ] *
+                        np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
+                    if not massLumping:
+                        Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
+                            np.outer(phis, phis).ravel() )
+                    row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
+                    col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
+                    
+                    self.u_weights[indices] += quadWeights[iQ] * phis
+                    
+                    index += nEntries
+                    if f is not None:
+                        self.b[indices] += f(quad) * phis * quadWeights[iQ]
         
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nNodes, nNodes) )

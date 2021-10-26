@@ -95,7 +95,7 @@ for iN, NX in enumerate(NX_array):
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
     
-    BC = fcifem.DirichletBoundaryCondition(sim, f.boundaryFunction)
+    BC = fcifem.DirichletBoundaryCondition(sim, f, f.boundaryFunction)
     sim.setInitialConditions(f, BC=BC)
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
