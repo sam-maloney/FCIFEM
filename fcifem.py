@@ -215,56 +215,88 @@ class DirichletBoundaryCondition(BoundaryCondition):
         self.B = B
         self.g = g
         self.inds = np.empty(4, dtype='int')
-        # self.vals = np.empty(4)
+        self.phis = np.empty(4)
+        self.gradphis = np.empty((4,2))
     
     def __call__(self, points, iPlane):
-        zetaMinus = self.sim.nodeX[iPlane]
-        zetaPlus = self.sim.nodeX[iPlane+1]
+        nodeX = self.sim.nodeX[iPlane]
+        nodeXp1 = self.sim.nodeX[iPlane+1]
         # ignore warnings about nan's where points don't map to any boundaries
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', r'invalid value encountered in')
             maps = self.B(points)
-            isBoundaryL = (maps[0] > zetaMinus) * (maps[0] < zetaPlus)
-            isBoundaryR = (maps[1] > zetaMinus) * (maps[1] < zetaPlus)
-        maps[0][~isBoundaryL] = self.sim.mapping(points[~isBoundaryL], zetaMinus)
-        maps[1][~isBoundaryR] = self.sim.mapping(points[~isBoundaryR], zetaPlus)
+            isBoundaryL = (maps[0] > nodeX) * (maps[0] < nodeXp1)
+            isBoundaryR = (maps[1] > nodeX) * (maps[1] < nodeXp1)
+        maps[0][~isBoundaryL] = self.sim.mapping(points[~isBoundaryL], nodeX)
+        maps[1][~isBoundaryR] = self.sim.mapping(points[~isBoundaryR], nodeXp1)
         return (isBoundaryL, maps[0], isBoundaryR, maps[1])
 
     def computeNodes(self):
         self.DoFs = np.vstack( (np.repeat(self.sim.nodeX[1:-1], self.sim.NY-1),
                                 self.sim.nodeY[1:-1,1:-1].ravel()) ).T
-        self.DirichletNodes = []
+        self.DirichletNodes = np.vstack((self.sim.nodeX, self.sim.nodeX))
         return self.DoFs
     
-    def test(self, point, iPlane):
-        zetaMinus = self.sim.nodeX[iPlane]
-        zetaPlus = self.sim.nodeX[iPlane+1]
-        # ignore warnings about nan's where points don't map to any boundaries
+    def test(self, p, iPlane):
+        nodeX = self.sim.nodeX[iPlane]
+        nodeXp1 = self.sim.nodeX[iPlane + 1]
+        isBoundaryMinus = isBoundaryPlus = False
+        # ignore warnings about nan's where p doesn't map to any boundaries
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', r'invalid value encountered in')
-            mapL, mapR = self.B(point)
-            isBoundaryL = (mapL > zetaMinus) * (mapL < zetaPlus)
-            isBoundaryR = (mapR > zetaMinus) * (mapR < zetaPlus)
+            zetaBottom, zetaTop = self.B(p)
+            p.shape = (2,)
+            isBoundaryBottom = (zetaBottom > nodeX) * (zetaBottom < nodeXp1)
+            isBoundaryTop = (zetaTop > nodeX) * (zetaTop < nodeXp1)
+            if isBoundaryBottom and (zetaBottom < p[0]):
+                zetaMinus = zetaBottom
+                isBoundaryMinus = True
+            if isBoundaryTop and (zetaTop < p[0]):
+                zetaMinus = zetaTop
+                isBoundaryMinus = True
+            if isBoundaryBottom and (zetaBottom > p[0]):
+                zetaPlus = zetaBottom
+                isBoundaryPlus = True
+            if isBoundaryTop and (zetaTop > p[0]):
+                zetaPlus = zetaTop
+                isBoundaryPlus = True
         self.inds.fill(-1)
-        if not isBoundaryL:
+        if not isBoundaryMinus:
+            zetaMinus = nodeX
+            mapL = self.sim.mapping(p, nodeX)
             self.inds[1] = np.searchsorted(self.sim.nodeY[iPlane], mapL, side='right')
+            ##### if inds[0] is not on lower boundary #####
             if self.inds[1] > 1:
                 self.inds[0] = self.inds[1] - 1 + iPlane*self.nYnodes
+            ##### otherwise inds[0] is on lower boundary #####
+            else:
+                pass
+            ##### if inds[1] is not on upper boundary #####
             if self.inds[1] < self.sim.NY:
                 self.inds[1] += iPlane*self.nYnodes
+            ##### otherwise inds[1] is on upper boundary #####
             else:
                 self.inds[1] = -1
                 # self.vals[1] = self.g()
-        if not isBoundaryR:
+        if not isBoundaryPlus:
+            zetaPlus = nodeXp1
+            mapR = self.sim.mapping(p, nodeXp1)
             self.inds[3] = np.searchsorted(self.sim.nodeY[iPlane + 1], mapR, side='right')
+            ##### if inds[2] is not on lower boundary #####
             if self.inds[3] > 1:
                 self.inds[2] = self.inds[3] - 1 + iPlane*self.nYnodes
+            ##### otherwise inds[0] is on lower boundary #####
+            else:
+                pass
+            ##### if inds[3] is not on upper boundary #####
             if self.inds[3] < self.sim.NY:
                 self.inds[3] += iPlane*self.nYnodes
+             ##### otherwise inds[3] is on upper boundary #####
             else:
                 self.inds[3] = -1
-        pass
-        return mapL, mapR, self.inds
+        rho = (p[0] - nodeX) / (zetaPlus - zetaMinus)
+        self.phis *= rho
+        return self.phis, self.gradphis, self.inds
 
 
 class FciFemSim(metaclass=ABCMeta):
@@ -539,8 +571,17 @@ class FciFemSim(metaclass=ABCMeta):
             
             for iQ, quad in enumerate(quads):
                 if self.BC.name == 'Dirichlet':
-                    mapL, mapR, inds = self.BC.test(quad, iPlane)
-                    
+                    phis, gradphis, inds = self.BC.test(quad, iPlane)
+                    for i in inds:
+                        if i == -1:
+                            continue # move to next i if boundary node
+                        for j in inds:
+                            if not massLumping:
+                                Mdata[index] = quadWeights[iQ]*phis[i]*phis[j]
+                            row_ind[index] = i
+                            col_ind[index] = j
+                            index += 1
+                                                               
                 
                 if self.BC.name == 'periodic':
                     phis = np.array((((1-phiL[iQ]), (1-rho[iQ])),

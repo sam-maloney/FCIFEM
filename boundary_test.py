@@ -61,7 +61,7 @@ uExactFunc = f.solution
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
-    'velocity' : np.array([0., 0.]),
+    'velocity' : np.array([0., 0.]), # Makes the advection matrix zero
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
     'px' : 0.,
     'py' : 0.,
