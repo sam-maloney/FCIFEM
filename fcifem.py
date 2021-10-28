@@ -278,21 +278,29 @@ class DirichletBoundaryCondition(BoundaryCondition):
         if not isBoundaryMinus:
             zetaMinus = nodeX
             mapL = self.sim.mapping(p, nodeX)
-            self.inds[1] = np.searchsorted(self.sim.nodeY[iPlane], mapL, side='right')
+            self.inds[1] = np.searchsorted(self.sim.nodeY[iPlane], mapL, side='right') - 1
             ##### if inds[0] is not on lower boundary #####
-            if self.inds[1] > 1:
+            if self.inds[1] > 0:
                 self.inds[0] = self.inds[1] - 1
-                self.phis[0] = (mapL - self.sim.nodeY[iPlane][self.inds[0]]) * self.sim.idy[iPlane][self.inds[0]]
-                self.inds[0] += iPlane*self.nYnodes
-                self.phis[1] = 1 - self.phis[0]
+                self.phis[1] = (mapL - self.sim.nodeY[iPlane][self.inds[0]+1]) * self.sim.idy[iPlane][self.inds[0]+1]
+                self.phis[0] = 1 - self.phis[1]
+                if iPlane == 0: # on the left boundary
+                    self.phis[0] *= self.g(np.array((nodeX, self.sim.nodeY[iPlane][self.inds[0]+1])))
+                    self.inds[0] = -1
+                else:
+                    self.inds[0] += (iPlane - 1)*self.nYnodes
             ##### otherwise inds[0] is on lower boundary #####
             else:
-                self.phis[0] = mapL * self.sim.idy[iPlane][0]
-                self.phis[1] = 1 - self.phis[0]
+                self.phis[1] = mapL * self.sim.idy[iPlane][0]
+                self.phis[0] = 1 - self.phis[1]
                 self.phis[0] *= self.g(np.array((nodeX, 0)))
             ##### if inds[1] is not on upper boundary #####
-            if self.inds[1] < self.sim.NY:
-                self.inds[1] += iPlane*self.nYnodes
+            if self.inds[1] < self.nYnodes:
+                if iPlane == 0: # on the left boundary
+                    self.phis[1] *= self.g(np.array((nodeX, self.sim.nodeY[iPlane][self.inds[1]+1])))
+                    self.inds[1] = -1
+                else:
+                    self.inds[1] += (iPlane - 1)*self.nYnodes
             ##### otherwise inds[1] is on upper boundary #####
             else:
                 self.inds[1] = -1
@@ -300,21 +308,29 @@ class DirichletBoundaryCondition(BoundaryCondition):
         if not isBoundaryPlus:
             zetaPlus = nodeXp1
             mapR = self.sim.mapping(p, nodeXp1)
-            self.inds[3] = np.searchsorted(self.sim.nodeY[iPlane+1], mapR, side='right')
+            self.inds[3] = np.searchsorted(self.sim.nodeY[iPlane+1], mapR, side='right') - 1
             ##### if inds[2] is not on lower boundary #####
-            if self.inds[3] > 1:
+            if self.inds[3] > 0:
                 self.inds[2] = self.inds[3] - 1
-                self.phis[2] = (mapR - self.sim.nodeY[iPlane+1][self.inds[2]]) * self.sim.idy[iPlane+1][self.inds[2]]
-                self.inds[2] += iPlane*self.nYnodes
-                self.phis[3] = 1 - self.phis[2]
+                self.phis[3] = (mapR - self.sim.nodeY[iPlane+1][self.inds[2]+1]) * self.sim.idy[iPlane+1][self.inds[2]+1]
+                self.phis[2] = 1 - self.phis[3]
+                if iPlane == self.nXnodes:
+                    self.phis[2] *= self.g(np.array((nodeXp1, self.sim.nodeY[iPlane][self.inds[2]+1])))
+                    self.inds[2] = -1
+                else:
+                    self.inds[2] += iPlane*self.nYnodes
             ##### otherwise inds[0] is on lower boundary #####
             else:
-                self.phis[2] = mapR * self.sim.idy[iPlane+1][0]
-                self.phis[3] = 1 - self.phis[2]
+                self.phis[3] = mapR * self.sim.idy[iPlane+1][0]
+                self.phis[2] = 1 - self.phis[3]
                 self.phis[2] *= self.g(np.array((nodeXp1, 0)))
             ##### if inds[3] is not on upper boundary #####
-            if self.inds[3] < self.sim.NY:
-                self.inds[3] += iPlane*self.nYnodes
+            if self.inds[3] < self.nYnodes:
+                if iPlane == self.nXnodes:
+                    self.phis[3] *= self.g(np.array((nodeXp1, self.sim.nodeY[iPlane][self.inds[3]+1])))
+                    self.inds[3] = -1
+                else:
+                    self.inds[3] += iPlane*self.nYnodes
              ##### otherwise inds[3] is on upper boundary #####
             else:
                 self.inds[3] = -1
@@ -323,6 +339,8 @@ class DirichletBoundaryCondition(BoundaryCondition):
         rho = (p[0] - nodeX) / (zetaPlus - zetaMinus)
         self.phis[0:2] *= (1 - rho)
         self.phis[2:4] *= rho
+        if np.any(self.inds >= self.sim.nNodes):
+            print('Too large index encountered')
         return self.phis, self.gradphis, self.inds
 
 
@@ -600,14 +618,23 @@ class FciFemSim(metaclass=ABCMeta):
                 if self.BC.name == 'Dirichlet':
                     phis, gradphis, inds = self.BC.test(quad, iPlane)
                     for alpha, i in enumerate(inds):
-                        if i == -1:
+                        if i < 0:
                             continue # move to next i if boundary node
                         for beta, j in enumerate(inds):
-                            if not massLumping:
-                                Mdata[index] = quadWeights[iQ]*phis[alpha]*phis[beta]
-                            row_ind[index] = i
-                            col_ind[index] = j
-                            index += 1
+                            if j < 0: # j is boundary node
+                                self.b[alpha] -= quadWeights[iQ] * (
+                                    (gradphis[alpha] @ self.velocity) * phis[beta] +
+                                    (gradphis[alpha] @ (self.diffusivity @ gradphis[beta])) )
+                            else: # i and j are both interior
+                                if (phis[alpha] < 0) or (phis[beta] < 0):
+                                    print('negative phis encountered in interior')
+                                if not massLumping:
+                                    Mdata[index] = quadWeights[iQ] * phis[alpha] * phis[beta]
+                                Adata[index] = quadWeights[iQ] * (gradphis[alpha] @ self.velocity) * phis[beta]
+                                Kdata[index] = quadWeights[iQ] * (gradphis[alpha] @ (self.diffusivity @ gradphis[beta]))
+                                row_ind[index] = i
+                                col_ind[index] = j
+                                index += 1
                                                                
                 
                 if self.BC.name == 'periodic':

@@ -100,7 +100,7 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
     # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
+    sim.computeSpatialDiscretization(f, NQX=1, NQY=NY, Qord=1, quadType='g',
                                      massLumping=False)
     
     try:
