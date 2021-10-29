@@ -216,7 +216,7 @@ class DirichletBoundaryCondition(BoundaryCondition):
         self.B = B
         self.inds = np.empty(4, dtype='int')
         self.phis = np.empty(4)
-        self.gradphis = np.empty((4,2))
+        self.gradphis = np.empty((4,2,2))
     
     def __call__(self, points, iPlane):
         nodeX = self.sim.nodeX[iPlane]
@@ -336,12 +336,16 @@ class DirichletBoundaryCondition(BoundaryCondition):
                 self.inds[3] = -1
                 self.phis[3] *= self.g(np.array((nodeXp1, 1)))
         p.shape = (2,)
-        rho = (p[0] - nodeX) / (zetaPlus - zetaMinus)
+        gradRho = 1 / (zetaPlus - zetaMinus)
+        rho = (p[0] - nodeX) * gradRho
+        # At this point self.phis = phi_FEM, so we then multiply by ramp
         self.phis[0:2] *= (1 - rho)
         self.phis[2:4] *= rho
         if np.any(self.inds >= self.sim.nNodes):
             print('Too large index encountered')
-        return self.phis, self.gradphis, self.inds
+        if (not np.any(self.inds < 0)) and (self.phis.sum() - 1 > 1e-5):
+            print('Interior phis not summing to unity')
+        return self.phis, self.gradphis.sum(axis=-1), self.inds
 
 
 class FciFemSim(metaclass=ABCMeta):
