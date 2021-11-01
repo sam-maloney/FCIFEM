@@ -241,6 +241,7 @@ class DirichletBoundaryCondition(BoundaryCondition):
         nodeX = self.sim.nodeX[iPlane]
         nodeXp1 = self.sim.nodeX[iPlane + 1]
         isBoundaryMinus = isBoundaryPlus = False
+        self.gradphis.fill(0.)
         # ignore warnings about nan's where p doesn't map to any boundaries
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', r'invalid value encountered in')
@@ -279,65 +280,65 @@ class DirichletBoundaryCondition(BoundaryCondition):
             zetaMinus = nodeX
             mapL = self.sim.mapping(p, nodeX)
             self.inds[1] = np.searchsorted(self.sim.nodeY[iPlane], mapL, side='right') - 1
-            ##### if inds[0] is not on lower boundary #####
-            if self.inds[1] > 0:
-                self.inds[0] = self.inds[1] - 1
-                self.phis[1] = (mapL - self.sim.nodeY[iPlane][self.inds[0]+1]) * self.sim.idy[iPlane][self.inds[0]+1]
-                self.phis[0] = 1 - self.phis[1]
-                if iPlane == 0: # on the left boundary
-                    self.phis[0] *= self.g(np.array((nodeX, self.sim.nodeY[iPlane][self.inds[0]+1])))
-                    self.inds[0] = -1
-                else:
-                    self.inds[0] += (iPlane - 1)*self.nYnodes
-            ##### otherwise inds[0] is on lower boundary #####
-            else:
-                self.phis[1] = mapL * self.sim.idy[iPlane][0]
-                self.phis[0] = 1 - self.phis[1]
-                self.phis[0] *= self.g(np.array((nodeX, 0)))
-            ##### if inds[1] is not on upper boundary #####
-            if self.inds[1] < self.nYnodes:
-                if iPlane == 0: # on the left boundary
-                    self.phis[1] *= self.g(np.array((nodeX, self.sim.nodeY[iPlane][self.inds[1]+1])))
-                    self.inds[1] = -1
-                else:
-                    self.inds[1] += (iPlane - 1)*self.nYnodes
-            ##### otherwise inds[1] is on upper boundary #####
-            else:
+            if self.inds[1] > self.nYnodes:
+                self.inds[1] -= 1
+            self.inds[0] = self.inds[1] - 1
+            self.phis[1] = (mapL - self.sim.nodeY[iPlane][self.inds[0]+1]) * self.sim.idy[iPlane][self.inds[0]+1]
+            self.phis[0] = 1 - self.phis[1]
+            self.gradphis[1,1,0] = self.sim.idy[iPlane][self.inds[0]+1]
+            self.gradphis[0,1,0] = -self.gradphis[1,1,0]
+            ##### if inds[0] on the left or lower boundary #####
+            if (iPlane == 0) or (self.inds[0] < 0):
+                g0 = self.g(np.array((nodeX, self.sim.nodeY[iPlane][self.inds[0]+1])))
+                self.phis[0] *= g0
+                self.gradphis[0,1,0] *= g0
+                self.inds[0] = -1 # necessary for left boundary
+            else: # inds[0] is interior
+                self.inds[0] += (iPlane - 1)*self.nYnodes
+            ##### if inds[1] on the left or upper boundary #####
+            if (iPlane == 0) or (self.inds[1] >= self.nYnodes):
+                g1 = self.g(np.array((nodeX, self.sim.nodeY[iPlane][self.inds[1]+1])))
+                self.phis[1] *= g1
+                self.gradphis[1,1,0] *= g1
                 self.inds[1] = -1
-                self.phis[1] *= self.g(np.array((nodeX, 1)))
+            else: # inds[1] is interior
+                self.inds[1] += (iPlane - 1)*self.nYnodes
         if not isBoundaryPlus:
             zetaPlus = nodeXp1
             mapR = self.sim.mapping(p, nodeXp1)
             self.inds[3] = np.searchsorted(self.sim.nodeY[iPlane+1], mapR, side='right') - 1
-            ##### if inds[2] is not on lower boundary #####
-            if self.inds[3] > 0:
-                self.inds[2] = self.inds[3] - 1
-                self.phis[3] = (mapR - self.sim.nodeY[iPlane+1][self.inds[2]+1]) * self.sim.idy[iPlane+1][self.inds[2]+1]
-                self.phis[2] = 1 - self.phis[3]
-                if iPlane == self.nXnodes:
-                    self.phis[2] *= self.g(np.array((nodeXp1, self.sim.nodeY[iPlane][self.inds[2]+1])))
-                    self.inds[2] = -1
-                else:
-                    self.inds[2] += iPlane*self.nYnodes
-            ##### otherwise inds[0] is on lower boundary #####
+            if self.inds[3] > self.nYnodes:
+                self.inds[3] -= 1
+            self.inds[2] = self.inds[3] - 1
+            self.phis[3] = (mapR - self.sim.nodeY[iPlane+1][self.inds[2]+1]) * self.sim.idy[iPlane+1][self.inds[2]+1]
+            self.phis[2] = 1 - self.phis[3]
+            self.gradphis[3,1,0] = self.sim.idy[iPlane+1][self.inds[2]+1]
+            self.gradphis[2,1,0] = -self.gradphis[2,1,0]
+            ##### if inds[2] on the right or lower boundary #####
+            if (iPlane == self.nXnodes) or (self.inds[2] < 0):
+                g2 = self.g(np.array((nodeXp1, self.sim.nodeY[iPlane][self.inds[2]+1])))
+                self.phis[2] *= g2
+                self.gradphis[2,1,0] *= g2
+                self.inds[2] = -1
             else:
-                self.phis[3] = mapR * self.sim.idy[iPlane+1][0]
-                self.phis[2] = 1 - self.phis[3]
-                self.phis[2] *= self.g(np.array((nodeXp1, 0)))
-            ##### if inds[3] is not on upper boundary #####
-            if self.inds[3] < self.nYnodes:
-                if iPlane == self.nXnodes:
-                    self.phis[3] *= self.g(np.array((nodeXp1, self.sim.nodeY[iPlane][self.inds[3]+1])))
-                    self.inds[3] = -1
-                else:
-                    self.inds[3] += iPlane*self.nYnodes
-             ##### otherwise inds[3] is on upper boundary #####
-            else:
+                self.inds[2] += iPlane*self.nYnodes
+            ##### if inds[3] on the right or upper boundary #####
+            if (iPlane == self.nXnodes) or (self.inds[3] >= self.nYnodes):
+                g3 = self.g(np.array((nodeXp1, self.sim.nodeY[iPlane][self.inds[3]+1])))
+                self.phis[3] *= g3
+                self.gradphis[3,1,0] *= g3
                 self.inds[3] = -1
-                self.phis[3] *= self.g(np.array((nodeXp1, 1)))
+            else:
+                self.inds[3] += iPlane*self.nYnodes
         p.shape = (2,)
         gradRho = 1 / (zetaPlus - zetaMinus)
         rho = (p[0] - nodeX) * gradRho
+        
+        self.gradphis[:,0,0] = np.array((-gradRho, -gradRho, gradRho, gradRho)) * self.phis
+        self.gradphis[:,1,0] *= np.array((1-rho, 1-rho, rho, rho))
+        # Gradients along the coordinate direction
+        self.gradphis[:,0,0] -= self.sim.mapping.deriv(p)*self.gradphis[:,1,0]
+        
         # At this point self.phis = phi_FEM, so we then multiply by ramp
         self.phis[0:2] *= (1 - rho)
         self.phis[2:4] *= rho
@@ -621,12 +622,13 @@ class FciFemSim(metaclass=ABCMeta):
             for iQ, quad in enumerate(quads):
                 if self.BC.name == 'Dirichlet':
                     phis, gradphis, inds = self.BC.test(quad, iPlane)
+                    # print(f'quad={quad}, inds={inds}')
                     for alpha, i in enumerate(inds):
                         if i < 0:
-                            continue # move to next i if boundary node
+                            continue # move to next i if boundary node*
                         for beta, j in enumerate(inds):
                             if j < 0: # j is boundary node
-                                self.b[alpha] -= quadWeights[iQ] * (
+                                self.b[i] -= quadWeights[iQ] * (
                                     (gradphis[alpha] @ self.velocity) * phis[beta] +
                                     (gradphis[alpha] @ (self.diffusivity @ gradphis[beta])) )
                             else: # i and j are both interior
@@ -686,156 +688,6 @@ class FciFemSim(metaclass=ABCMeta):
         else:
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nNodes, nNodes) )
-    
-    # def computeSpatialDiscretization(self, f=None, NQX=1, NQY=None, Qord=2,
-    #                                   quadType='gauss', massLumping=False):
-    #     """Assemble the system discretization matrices K, A, M in CSR format.
-        
-    #     K is the stiffness matrix from the diffusion term
-    #     A is the advection matrix
-    #     M is the mass matrix from the time derivative
-        
-    #     Parameters
-    #     ----------
-    #     f : {callable, None}, optional
-    #         Forcing function. Must take 2D array of points and return 1D array.
-    #         The default is None.
-    #     NQX : int, optional
-    #         Number of quadrature cell divisions between FCI planes.
-    #         The default is 1.
-    #     NQY : {int, None}, optional
-    #         Number of quadrature cell divisions in y-direction.
-    #         The default is None, which sets NQY = NY.
-    #     Qord : int, optional
-    #         Number of quadrature points in each grid cell along one dimension.
-    #         The default is 2.
-    #     quadType : string, optional
-    #         Type of quadrature to be used. Must be either 'gauss' or 'uniform'.
-    #         Produces either Gauss-Legendre or Newton-Cotes type points/weights.
-    #         The default is 'gauss'.
-    #     massLumping : bool, optional
-    #         Determines whether mass-lumping is used to calculate M matrix.
-    #         The default is False.
-
-    #     Returns
-    #     -------
-    #     None.
-
-    #     """
-    #     ndim = self.ndim
-    #     nNodes = self.nNodes
-    #     NX = self.NX
-    #     NY = self.NY
-    #     if NQY is None:
-    #         NQY = NY
-    #     self.f = f
-    #     self.NQX = NQX
-    #     self.NQY = NQY
-    #     self.Qord = Qord
-    #     self.quadType = quadType
-    #     self.massLumping = massLumping
-    #     # pre-allocate arrays for stiffness matrix triplets
-    #     nEntries = (2*ndim)**2
-    #     nQuads = NQX * NQY * Qord**2
-    #     nMaxEntries = nEntries * nQuads * NX
-    #     Kdata = np.zeros(nMaxEntries)
-    #     Adata = np.zeros(nMaxEntries)
-    #     if not massLumping:
-    #         Mdata = np.zeros(nMaxEntries)
-    #     row_ind = np.zeros(nMaxEntries, dtype='int')
-    #     col_ind = np.zeros(nMaxEntries, dtype='int')
-    #     self.b = np.zeros(nNodes)
-    #     self.u_weights = np.zeros(nNodes)
-        
-    #     ##### compute spatial discretizaton
-    #     index = 0
-    #     for iPlane in range(NX):
-    #         dx = self.dx[iPlane]
-    #         nodeX = self.nodeX[iPlane]
-    #         nodeXp1 = self.nodeX[iPlane + 1]
-    #         ##### generate quadrature points
-    #         if quadType.lower() in ('gauss', 'g', 'gaussian'):
-    #             offsets, weights = roots_legendre(Qord)
-    #         elif quadType.lower() in ('uniform', 'u'):
-    #             offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
-    #             weights = np.repeat(1., Qord)
-    #         offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
-    #         weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
-    #         quads = ( np.indices([NQX, NQY], dtype='float').T.
-    #                   reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
-    #         quadWeights = np.repeat(1., len(quads))
-    #         for i in range(ndim):
-    #             quads = np.concatenate( 
-    #                 [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
-    #             quadWeights = np.concatenate(
-    #                 [quadWeights * weight for weight in weights[i]] )
-            
-    #         quads += [self.nodeX[iPlane], 0]
-    #         (isBoundaryL, mapL, isBoundaryR, mapR) = self.BC(quads, iPlane)
-            
-    #         zetaMinus = np.repeat(nodeX  , nQuads)
-    #         zetaPlus  = np.repeat(nodeXp1, nQuads)
-    #         zetaMinus[isBoundaryL] = mapL[isBoundaryL]
-    #         zetaPlus [isBoundaryR] = mapR[isBoundaryR]
-    #         rho = (quads[:,0] - zetaMinus) / (zetaPlus - zetaMinus)
-            
-    #         indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1)
-    #         indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1)
-    #         phiL = np.empty(nQuads)
-    #         phiR = np.empty(nQuads)
-    #         phiL[~isBoundaryL] = (mapL[~isBoundaryL] - self.nodeY[iPlane][indL[~isBoundaryL]]) * self.idy[iPlane][indL[~isBoundaryL]]
-    #         phiR[~isBoundaryR] = (mapR[~isBoundaryR] - self.nodeY[iPlane + 1][indR[~isBoundaryR]]) * self.idy[iPlane + 1][indR[~isBoundaryR]]
-            
-    #         phiL[isBoundaryL] = (mapL[isBoundaryL] - nodeX) / dx
-    #         phiR[isBoundaryR] = (mapR[isBoundaryR] - nodeX) / dx
-            
-    #         gradRho = 1 / (zetaPlus - zetaMinus)
-            
-    #         for iQ, quad in enumerate(quads):
-    #             phis = np.array((((1-phiL[iQ]), (1-rho[iQ])),
-    #                              (   phiL[iQ] , (1-rho[iQ])),
-    #                              ((1-phiR[iQ]),    rho[iQ] ),
-    #                              (   phiR[iQ] ,    rho[iQ] )))
-                
-    #             gradphis = phis * np.array((
-    #                 (-gradRho[iQ], -self.idy[iPlane][indL[iQ]]),
-    #                 (-gradRho[iQ],  self.idy[iPlane][indL[iQ]]),
-    #                 ( gradRho[iQ], -self.idy[iPlane + 1][indR[iQ]]),
-    #                 ( gradRho[iQ],  self.idy[iPlane + 1][indR[iQ]])))
-                
-    #             # Gradients along the coordinate direction
-    #             gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
-            
-    #             phis = np.prod(phis, axis=1)
-    #             indices = np.array([indL[iQ] + NY*iPlane,
-    #                                 (indL[iQ]+1) % NY + NY*iPlane,
-    #                                 (indR[iQ] + NY*(iPlane+1)) % nNodes,
-    #                                 ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nNodes])
-    #             Kdata[index:index+nEntries] = ( quadWeights[iQ] * 
-    #                 np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
-    #             Adata[index:index+nEntries] = ( quadWeights[iQ] *
-    #                 np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
-    #             if not massLumping:
-    #                 Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
-    #                     np.outer(phis, phis).ravel() )
-    #             row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
-    #             col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
-                
-    #             self.u_weights[indices] += quadWeights[iQ] * phis
-                
-    #             index += nEntries
-    #             if f is not None:
-    #                 self.b[indices] += f(quad) * phis * quadWeights[iQ]
-        
-    #     self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
-    #                             shape=(nNodes, nNodes) )
-    #     self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
-    #                             shape=(nNodes, nNodes) )
-    #     if massLumping:
-    #         self.M = sp.diags(self.u_weights, format='csr')
-    #     else:
-    #         self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
-    #                             shape=(nNodes, nNodes) )
     
     def initializeTimeIntegrator(self, integrator, dt, P='ilu', **kwargs):
         """Initialize and register the time integration scheme to be used.
@@ -928,36 +780,59 @@ class FciFemSim(metaclass=ABCMeta):
         self.phiPlot = np.empty((nPointsTotal, 4))
         self.indPlot = np.empty((nPointsTotal, 4), dtype='int')
         self.X = np.empty(0)
-        for iPlane in range(NX):
-            dx = self.dx[iPlane]
-            nodeX = self.nodeX[iPlane]
-            points = np.indices((nx, NY*ny + 1), dtype='float') \
-                .reshape(self.ndim, -1).T * [dx/nx, 1/(NY*ny)]
-            self.X = np.append(self.X, points[:,0] + nodeX)
-            rho = points[:,0] / dx
-            points += [nodeX, 0]
-            mapL = self.BC.mapping(points, nodeX)
-            mapR = self.BC.mapping(points, self.nodeX[iPlane+1])
-            indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
-            indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
-            phiL = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
-            phiR = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+        if self.BC.name == 'periodic':
+            for iPlane in range(NX):
+                dx = self.dx[iPlane]
+                nodeX = self.nodeX[iPlane]
+                points = np.indices((nx, NY*ny + 1), dtype='float') \
+                    .reshape(self.ndim, -1).T * [dx/nx, 1/(NY*ny)]
+                rho = points[:,0] / dx
+                points += [nodeX, 0]
+                self.X = np.append(self.X, points[:,0])
+                mapL = self.BC.mapping(points, nodeX)
+                mapR = self.BC.mapping(points, self.nodeX[iPlane+1])
+                indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
+                indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
+                phiL = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
+                phiR = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
+                for iP, point in enumerate(points):
+                    self.phiPlot[iPlane*nPointsPerPlane + iP] = (
+                        (1-phiL[iP]) * (1-rho[iP]), phiL[iP] * (1-rho[iP]),
+                        (1-phiR[iP]) * rho[iP]    , phiR[iP] * rho[iP] )
+                    self.indPlot[iPlane*nPointsPerPlane + iP] = (
+                        indL[iP] + NY*iPlane,
+                        (indL[iP]+1) % NY + NY*iPlane,
+                        (indR[iP] + NY*(iPlane+1)) % nNodes,
+                        ((indR[iP]+1) % NY + NY*(iPlane+1)) % nNodes )
+            self.phiPlot[iPlane*nPointsPerPlane + iP + 1:] = self.phiPlot[0:NY*ny + 1]
+            self.indPlot[iPlane*nPointsPerPlane + iP + 1:] = self.indPlot[0:NY*ny + 1]
+            
+        if self.BC.name == 'Dirichlet':
+            for iPlane in range(NX):
+                dx = self.dx[iPlane]
+                nodeX = self.nodeX[iPlane]
+                points = np.indices((nx, NY*ny + 1), dtype='float') \
+                    .reshape(self.ndim, -1).T * [dx/nx, 1/(NY*ny)]
+                self.X = np.append(self.X, points[:,0] + nodeX)
+                points += [nodeX, 0]
+                for iP, point in enumerate(points):
+                    phis, _, inds = self.BC.test(point, iPlane)
+                    self.phiPlot[iPlane*nPointsPerPlane + iP] = phis
+                    self.indPlot[iPlane*nPointsPerPlane + iP] = inds
+            # Deal with right boundary
+            points = np.hstack((np.full((NY*ny + 1, 1), 2*np.pi), points[0:NY*ny + 1,1:2]))
             for iP, point in enumerate(points):
-                self.phiPlot[iPlane*nPointsPerPlane + iP] = (
-                    (1-phiL[iP]) * (1-rho[iP]), phiL[iP] * (1-rho[iP]),
-                    (1-phiR[iP]) * rho[iP]    , phiR[iP] * rho[iP] )
-                self.indPlot[iPlane*nPointsPerPlane + iP] = (
-                    indL[iP] + NY*iPlane,
-                    (indL[iP]+1) % NY + NY*iPlane,
-                    (indR[iP] + NY*(iPlane+1)) % nNodes,
-                    ((indR[iP]+1) % NY + NY*(iPlane+1)) % nNodes )
+                    phis, _, inds = self.BC.test(point, iPlane)
+                    self.phiPlot[(iPlane+1)*nPointsPerPlane + iP] = phis
+                    self.indPlot[(iPlane+1)*nPointsPerPlane + iP] = inds
         
-        self.phiPlot[iPlane*nPointsPerPlane + iP + 1:] = self.phiPlot[0:NY*ny + 1]
-        self.indPlot[iPlane*nPointsPerPlane + iP + 1:] = self.indPlot[0:NY*ny + 1]
-        
-        self.X = np.append(self.X, (2*np.pi*np.ones(NY*ny + 1)))
-        self.Y = np.concatenate((np.tile(points[:,1], NX), points[0:NY*ny + 1,1]))
-        self.U = np.sum(self.phiPlot * self.u[self.indPlot], axis=1)
+        self.X = np.append(self.X, np.full(NY*ny+1, 2*np.pi))
+        self.Y = np.tile(points[0:NY*ny + 1,1], NX*nx + 1)
+        if self.BC.name == 'periodic':
+            self.uPlot = self.u
+        if self.BC.name == 'Dirichlet':
+            self.uPlot = np.concatenate((self.u, [1.]))
+        self.U = np.sum(self.phiPlot * self.uPlot[self.indPlot], axis=1)
     
     def computePlottingSolution(self):
         """Compute interpolated solution at the plotting points.
@@ -967,4 +842,4 @@ class FciFemSim(metaclass=ABCMeta):
         None.
 
         """
-        self.U = np.sum(self.phiPlot * self.u[self.indPlot], axis=1)
+        self.U = np.sum(self.phiPlot * self.uPlot[self.indPlot], axis=1)

@@ -69,7 +69,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 2
-stop = 3
+stop = 2
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -89,15 +89,9 @@ for iN, NX in enumerate(NX_array):
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
     
     BC = fcifem.DirichletBoundaryCondition(sim, f.solution, f.boundaryFunction)
     sim.setInitialConditions(f, BC=BC)
-    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
     # Assemble the mass matrix and forcing term
     sim.computeSpatialDiscretization(f, NQX=1, NQY=NY, Qord=1, quadType='g',
@@ -109,6 +103,7 @@ for iN, NX in enumerate(NX_array):
         pass
     
     t_setup[iN] = default_timer()-start_time
+    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     print(f'setup time = {t_setup[iN]} s')
     start_time = default_timer()
     
@@ -150,7 +145,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-sim.generatePlottingPoints(nx=1, ny=1)
+sim.generatePlottingPoints(nx=5, ny=5)
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
