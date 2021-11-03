@@ -15,15 +15,32 @@ import fcifem
 
 from timeit import default_timer
 
-# mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
-mapping = fcifem.QuadraticMapping(0.02)
-# mapping = fcifem.LinearMapping(1/(2*np.pi))
-# mapping = fcifem.StraightMapping()
+# ##### standard isotropic and periodic test problem
+# def f(p):
+#     p.shape = (-1,2)
+#     return np.sin(p[:,0])*np.sin(2*np.pi*p[:,1])
+
+# uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
+
+# class TestProblem:
+#     def __call__(self, p):
+#         p.shape = (-1,2)
+#         return np.ones(len(p))
+    
+#     def solution(self, p):
+#         p.shape = (-1,2)
+#         return np.ones(len(p))
+
+# class StraightBoundaryFunction:
+#     def __call__(self, p):
+#         p.shape = (-1,2)
+#         return np.full(len(p), np.nan), np.full(len(p), np.nan)
+
+# B = StraightBoundaryFunction()
 
 class TestProblem:
     n = 20
     A = 0.02
-    invA = 1/A
     
     def __call__(self, p):
         p.shape = (-1,2)
@@ -39,24 +56,44 @@ class TestProblem:
         x = p[:,0]
         y = p[:,1]
         return x*np.sin(self.n*(y - self.A*x**2))
+        
+f = TestProblem()
+uExactFunc = f.solution
+
+class QaudraticBoundaryFunction:
     
-    def boundaryFunction(self, p):
+    def __init__(self, A):
+        self.A = A
+        self.invA = 1/A
+    
+    def __call__(self, p):
         p.shape = (-1,2)
         x = p[:,0]
         y = p[:,1]
         zetaBottom = np.sqrt(x**2 - self.invA*y)
         zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
         return zetaBottom, zetaTop
-        
-f = TestProblem()
-uExactFunc = f.solution
+    
+    def deriv(self, p, dim):
+        p.shape = (-1,2)
+        x = p[:,0]
+        y = p[:,1]
+        if dim == 0: # x-derivative
+            zetaBottom = x / np.sqrt(x**2 - self.invA*y)
+            zetaTop = x / np.sqrt(x**2 + self.invA*(1 - y))
+            return zetaBottom, zetaTop
+        if dim == 1: # y-derivative
+            zetaBottom = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
+            zetaTop = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
+            return zetaBottom, zetaTop
+    
+B = QaudraticBoundaryFunction(f.A)
 
-# ##### standard test isotropic test problem
-# def f(p):
-#     p.shape = (-1,2)
-#     return np.sin(p[:,0])*np.sin(2*np.pi*p[:,1])
+mapping = fcifem.QuadraticMapping(f.A)
 
-# uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
+# mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
+# mapping = fcifem.LinearMapping(1/(2*np.pi))
+# mapping = fcifem.StraightMapping()
 
 kwargs={
     'mapping' : mapping,
@@ -69,7 +106,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 2
-stop = 2
+stop = 6
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -90,11 +127,14 @@ for iN, NX in enumerate(NX_array):
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     
-    BC = fcifem.DirichletBoundaryCondition(sim, f.solution, f.boundaryFunction)
-    sim.setInitialConditions(f, BC=BC)
+    # BC = fcifem.PeriodicBoundaryCondition(sim)
+    BC = fcifem.DirichletBoundaryCondition(sim, f.solution, B)
+    sim.setInitialConditions(np.zeros(BC.nNodes), mapped=False, BC=BC)
+    
+    # sim.BC.test(np.array((5.969026041820607, 0.)), sim.BC.nXnodes)
     
     # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, NQX=1, NQY=NY, Qord=1, quadType='g',
+    sim.computeSpatialDiscretization(f, NQX=1, NQY=NY, Qord=3, quadType='g',
                                      massLumping=False)
     
     try:
@@ -108,10 +148,9 @@ for iN, NX in enumerate(NX_array):
     start_time = default_timer()
     
     # Solve for the approximate solution
-    # u = sp_la.spsolve(sim.K, sim.b)
+    # sim.u = sp_la.spsolve(sim.K, sim.b)
     tolerance = 1e-10
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=tolerance, atol=tolerance)
-    # sim.u = u[0:sim.nNodes]
     
     t_solve[iN] = default_timer()-start_time
     print(f'solve time = {t_solve[iN]} s')
@@ -145,7 +184,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-sim.generatePlottingPoints(nx=5, ny=5)
+sim.generatePlottingPoints(nx=1, ny=1)
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
@@ -162,10 +201,10 @@ vmax = maxAbsErr
 ax1 = plt.subplot(121)
 field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
 # field = ax1.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u - uExact, shading='gouraud'
-                      ,cmap='seismic', vmin=vmin, vmax=vmax
+                       ,cmap='seismic', vmin=vmin, vmax=vmax
                      )
 x = np.linspace(0, sim.nodeX[-1], 100)
-for yi in [0.4, 0.5, 0.6]:
+for yi in [0.0, 0.1, 0.2]:
     ax1.plot(x, [mapping(np.array([[0, yi]]), i) for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')

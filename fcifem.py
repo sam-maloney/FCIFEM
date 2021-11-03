@@ -6,12 +6,8 @@ Created on Mon Jun  8 13:47:07 2020
 """
 
 from scipy.special import roots_legendre
-import scipy.linalg as la
 import scipy.sparse as sp
-import scipy.sparse.linalg as sp_la
 import numpy as np
-# import scipy
-import ssqr
 import warnings
 
 from abc import ABCMeta, abstractmethod
@@ -242,6 +238,8 @@ class DirichletBoundaryCondition(BoundaryCondition):
         nodeXp1 = self.sim.nodeX[iPlane + 1]
         isBoundaryMinus = isBoundaryPlus = False
         self.gradphis.fill(0.)
+        self.inds.fill(-1)
+        i0 = i1 = i2 = i3 = -1
         # ignore warnings about nan's where p doesn't map to any boundaries
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', r'invalid value encountered in')
@@ -251,88 +249,97 @@ class DirichletBoundaryCondition(BoundaryCondition):
             isBoundaryBottom = (zetaBottom > nodeX) * (zetaBottom < nodeXp1)
             isBoundaryTop = (zetaTop > nodeX) * (zetaTop < nodeXp1)
             p.shape = (2,)
-            if isBoundaryBottom and (zetaBottom < p[0]):
+            if isBoundaryBottom and (zetaBottom <= p[0]):
                 zetaMinus = zetaBottom
                 isBoundaryMinus = True
-                self.phis[0] = (zetaMinus - nodeX) / self.sim.dx[iPlane]
+                self.gradphis[0,0,1] = 1 / self.sim.dx[iPlane]
+                self.gradphis[1,0,1] = -self.gradphis[0,0,1]
+                self.phis[0] = (zetaMinus - nodeX) * self.gradphis[0,0,1]
                 self.phis[1] = 1 - self.phis[0]
-                self.phis[0:2] *= self.g(np.array((zetaMinus, 0)))
-            if isBoundaryTop and (zetaTop < p[0]):
+                g0 = self.g(np.array((nodeXp1, 0)))
+                self.phis[0] *= g0
+                self.gradphis[0,0,1] *= g0
+                self.phis[1] *= self.g(np.array((nodeX, 0)))
+            if isBoundaryTop and (zetaTop <= p[0]):
                 zetaMinus = zetaTop
                 isBoundaryMinus = True
                 self.phis[0] = (zetaMinus - nodeX) / self.sim.dx[iPlane]
                 self.phis[1] = 1 - self.phis[0]
-                self.phis[0:2] *= self.g(np.array((zetaMinus, 1)))
+                self.phis[0] *= self.g(np.array((nodeXp1, 1)))
+                self.phis[1] *= self.g(np.array((nodeX, 1)))
             if isBoundaryBottom and (zetaBottom > p[0]):
                 zetaPlus = zetaBottom
                 isBoundaryPlus = True
                 self.phis[2] = (zetaPlus - nodeX) / self.sim.dx[iPlane]
                 self.phis[3] = 1 - self.phis[2]
-                self.phis[2:4] *= self.g(np.array((zetaPlus, 0)))
+                self.phis[2] *= self.g(np.array((nodeXp1, 0)))
+                self.phis[3] *= self.g(np.array((nodeX, 0)))
             if isBoundaryTop and (zetaTop > p[0]):
                 zetaPlus = zetaTop
                 isBoundaryPlus = True
                 self.phis[2] = (zetaPlus - nodeX) / self.sim.dx[iPlane]
                 self.phis[3] = 1 - self.phis[2]
-                self.phis[2:4] *= self.g(np.array((zetaPlus, 1)))
-        self.inds.fill(-1)
+                self.phis[2] *= self.g(np.array((nodeXp1, 1)))
+                self.phis[3] *= self.g(np.array((nodeX, 1)))
         if not isBoundaryMinus:
             zetaMinus = nodeX
-            mapL = self.sim.mapping(p, nodeX)
-            self.inds[1] = np.searchsorted(self.sim.nodeY[iPlane], mapL, side='right') - 1
-            if self.inds[1] > self.nYnodes:
-                self.inds[1] -= 1
-            self.inds[0] = self.inds[1] - 1
-            self.phis[1] = (mapL - self.sim.nodeY[iPlane][self.inds[0]+1]) * self.sim.idy[iPlane][self.inds[0]+1]
+            mapL = float(self.sim.mapping(p, nodeX))
+            i1 = np.searchsorted(self.sim.nodeY[iPlane], mapL, side='right') - 1
+            if i1 > self.nYnodes: # for points right at upper boundary nodes
+                i1 -= 1
+            i0 = i1 - 1
+            self.phis[1] = (mapL - self.sim.nodeY[iPlane][i1]) * self.sim.idy[iPlane][i1]
             self.phis[0] = 1 - self.phis[1]
-            self.gradphis[1,1,0] = self.sim.idy[iPlane][self.inds[0]+1]
+            self.gradphis[1,1,0] = self.sim.idy[iPlane][i1]
             self.gradphis[0,1,0] = -self.gradphis[1,1,0]
             ##### if inds[0] on the left or lower boundary #####
-            if (iPlane == 0) or (self.inds[0] < 0):
-                g0 = self.g(np.array((nodeX, self.sim.nodeY[iPlane][self.inds[0]+1])))
+            if (iPlane == 0) or (i0 < 0):
+                g0 = self.g(np.array((nodeX, self.sim.nodeY[iPlane][i1])))
                 self.phis[0] *= g0
                 self.gradphis[0,1,0] *= g0
-                self.inds[0] = -1 # necessary for left boundary
+                i0 = -1 # necessary for left boundary
             else: # inds[0] is interior
-                self.inds[0] += (iPlane - 1)*self.nYnodes
+                i0 += (iPlane - 1)*self.nYnodes
             ##### if inds[1] on the left or upper boundary #####
-            if (iPlane == 0) or (self.inds[1] >= self.nYnodes):
-                g1 = self.g(np.array((nodeX, self.sim.nodeY[iPlane][self.inds[1]+1])))
+            if (iPlane == 0) or (i1 >= self.nYnodes):
+                g1 = self.g(np.array((nodeX, self.sim.nodeY[iPlane][i1+1])))
                 self.phis[1] *= g1
                 self.gradphis[1,1,0] *= g1
-                self.inds[1] = -1
+                i1 = -1 # necessary for right boundary
             else: # inds[1] is interior
-                self.inds[1] += (iPlane - 1)*self.nYnodes
+                i1 += (iPlane - 1)*self.nYnodes
         if not isBoundaryPlus:
             zetaPlus = nodeXp1
-            mapR = self.sim.mapping(p, nodeXp1)
-            self.inds[3] = np.searchsorted(self.sim.nodeY[iPlane+1], mapR, side='right') - 1
-            if self.inds[3] > self.nYnodes:
-                self.inds[3] -= 1
-            self.inds[2] = self.inds[3] - 1
-            self.phis[3] = (mapR - self.sim.nodeY[iPlane+1][self.inds[2]+1]) * self.sim.idy[iPlane+1][self.inds[2]+1]
+            mapR = float(self.sim.mapping(p, nodeXp1))
+            i3 = np.searchsorted(self.sim.nodeY[iPlane+1], mapR, side='right') - 1
+            if i3 > self.nYnodes: # for points right at upper boundary nodes
+                i3 -= 1
+            i2 = i3 - 1
+            self.phis[3] = (mapR - self.sim.nodeY[iPlane+1][i3]) * self.sim.idy[iPlane+1][i3]
             self.phis[2] = 1 - self.phis[3]
-            self.gradphis[3,1,0] = self.sim.idy[iPlane+1][self.inds[2]+1]
-            self.gradphis[2,1,0] = -self.gradphis[2,1,0]
+            self.gradphis[3,1,0] = self.sim.idy[iPlane+1][i3]
+            self.gradphis[2,1,0] = -self.gradphis[3,1,0]
             ##### if inds[2] on the right or lower boundary #####
-            if (iPlane == self.nXnodes) or (self.inds[2] < 0):
-                g2 = self.g(np.array((nodeXp1, self.sim.nodeY[iPlane][self.inds[2]+1])))
+            if (iPlane == self.nXnodes) or (i2 < 0):
+                g2 = self.g(np.array((nodeXp1, self.sim.nodeY[iPlane+1][i3])))
                 self.phis[2] *= g2
                 self.gradphis[2,1,0] *= g2
-                self.inds[2] = -1
+                i2 = -1
             else:
-                self.inds[2] += iPlane*self.nYnodes
+                i2 += iPlane*self.nYnodes
             ##### if inds[3] on the right or upper boundary #####
-            if (iPlane == self.nXnodes) or (self.inds[3] >= self.nYnodes):
-                g3 = self.g(np.array((nodeXp1, self.sim.nodeY[iPlane][self.inds[3]+1])))
+            if (iPlane == self.nXnodes) or (i3 >= self.nYnodes):
+                g3 = self.g(np.array((nodeXp1, self.sim.nodeY[iPlane+1][i3+1])))
                 self.phis[3] *= g3
                 self.gradphis[3,1,0] *= g3
-                self.inds[3] = -1
+                i3 = -1
             else:
-                self.inds[3] += iPlane*self.nYnodes
+                i3 += iPlane*self.nYnodes
         p.shape = (2,)
         gradRho = 1 / (zetaPlus - zetaMinus)
-        rho = (p[0] - nodeX) * gradRho
+        rho = (p[0] - zetaMinus) * gradRho
+        
+        self.inds[:] = (i0, i1, i2, i3)
         
         self.gradphis[:,0,0] = np.array((-gradRho, -gradRho, gradRho, gradRho)) * self.phis
         self.gradphis[:,1,0] *= np.array((1-rho, 1-rho, rho, rho))
@@ -493,15 +500,15 @@ class FciFemSim(metaclass=ABCMeta):
         else:
             raise SystemExit(f"Unkown boundary condition: {BC}")
         self.nNodes = self.BC.nNodes
+        self.nodes = self.BC.computeNodes()
+        self.nodesMapped = self.nodes.copy()
+        self.nodesMapped[:,1] = self.BC.mapping(self.nodes, 0)
         if isinstance(u0, np.ndarray) and u0.shape == (self.nNodes,):
             self.u0 = u0
             self.u = u0.copy()
             self.u0func = None
         elif callable(u0):
             self.u0func = u0
-            self.nodes = self.BC.computeNodes()
-            self.nodesMapped = self.nodes.copy()
-            self.nodesMapped[:,1] = self.BC.mapping(self.nodes, 0)
             if mapped:
                 self.u = u0(self.nodesMapped)
             else:
@@ -620,12 +627,14 @@ class FciFemSim(metaclass=ABCMeta):
                 gradRho = 1 / (zetaPlus - zetaMinus)
             
             for iQ, quad in enumerate(quads):
+                if f is not None:
+                    fq = f(quad)
                 if self.BC.name == 'Dirichlet':
                     phis, gradphis, inds = self.BC.test(quad, iPlane)
                     # print(f'quad={quad}, inds={inds}')
                     for alpha, i in enumerate(inds):
                         if i < 0:
-                            continue # move to next i if boundary node*
+                            continue # move to next i if boundary node
                         for beta, j in enumerate(inds):
                             if j < 0: # j is boundary node
                                 self.b[i] -= quadWeights[iQ] * (
@@ -641,6 +650,9 @@ class FciFemSim(metaclass=ABCMeta):
                                 row_ind[index] = i
                                 col_ind[index] = j
                                 index += 1
+                        self.u_weights[i] += quadWeights[iQ] * phis[alpha]
+                        if f is not None:
+                            self.b[i] += quadWeights[iQ] * fq * phis[alpha]
                                                                
                 
                 if self.BC.name == 'periodic':
@@ -677,7 +689,7 @@ class FciFemSim(metaclass=ABCMeta):
                     
                     index += nEntries
                     if f is not None:
-                        self.b[indices] += f(quad) * phis * quadWeights[iQ]
+                        self.b[indices] += fq * phis * quadWeights[iQ]
         
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nNodes, nNodes) )
@@ -781,6 +793,7 @@ class FciFemSim(metaclass=ABCMeta):
         self.indPlot = np.empty((nPointsTotal, 4), dtype='int')
         self.X = np.empty(0)
         if self.BC.name == 'periodic':
+            self.uPlot = self.u
             for iPlane in range(NX):
                 dx = self.dx[iPlane]
                 nodeX = self.nodeX[iPlane]
@@ -808,6 +821,7 @@ class FciFemSim(metaclass=ABCMeta):
             self.indPlot[iPlane*nPointsPerPlane + iP + 1:] = self.indPlot[0:NY*ny + 1]
             
         if self.BC.name == 'Dirichlet':
+            self.uPlot = np.concatenate((self.u, [1.]))
             for iPlane in range(NX):
                 dx = self.dx[iPlane]
                 nodeX = self.nodeX[iPlane]
@@ -828,10 +842,6 @@ class FciFemSim(metaclass=ABCMeta):
         
         self.X = np.append(self.X, np.full(NY*ny+1, 2*np.pi))
         self.Y = np.tile(points[0:NY*ny + 1,1], NX*nx + 1)
-        if self.BC.name == 'periodic':
-            self.uPlot = self.u
-        if self.BC.name == 'Dirichlet':
-            self.uPlot = np.concatenate((self.u, [1.]))
         self.U = np.sum(self.phiPlot * self.uPlot[self.indPlot], axis=1)
     
     def computePlottingSolution(self):
@@ -842,4 +852,5 @@ class FciFemSim(metaclass=ABCMeta):
         None.
 
         """
+        self.uPlot[0:self.nNodes] = self.u
         self.U = np.sum(self.phiPlot * self.uPlot[self.indPlot], axis=1)

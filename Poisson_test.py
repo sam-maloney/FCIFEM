@@ -47,7 +47,7 @@ class slantedTestProblem:
 f = slantedTestProblem()
 uExactFunc = f.solution
 
-# ##### standard test isotropic test problem
+# ##### standard isotropic test problem
 # def f(p):
 #     p.shape = (-1,2)
 #     return np.sin(p[:,0])*np.sin(2*np.pi*p[:,1])
