@@ -56,21 +56,21 @@ class Mapping(metaclass=ABCMeta):
         """
         raise NotImplementedError
     
-    def theta(self, points):
-        """Compute angle of mapping function from +x-axis at given points.
+    # def theta(self, points):
+    #     """Compute angle of mapping function from +x-axis at given points.
 
-        Parameters
-        ----------
-        points : numpy.ndarray, shape=(n,ndim)
-            (x,y) coordinates of evaluation points.
+    #     Parameters
+    #     ----------
+    #     points : numpy.ndarray, shape=(n,ndim)
+    #         (x,y) coordinates of evaluation points.
 
-        Returns
-        -------
-        numpy.ndarray, shape=(n,)
-            Angles of mapping function from +x-axis evaluated at all points.
+    #     Returns
+    #     -------
+    #     numpy.ndarray, shape=(n,)
+    #         Angles of mapping function from +x-axis evaluated at all points.
 
-        """
-        return np.arctan(self.deriv(points))
+    #     """
+    #     return np.arctan(self.deriv(points))
     
     def __repr__(self):
         return f"{self.__class__.__name__}()"
@@ -81,16 +81,19 @@ class StraightMapping(Mapping):
         return 'straight'
 
     def __call__(self, points, zeta=0.):
+        originalShape = points.shape
         points.shape = (-1, 2)
-        return points[:,1] % 1
+        y = points[:,1]
+        points.shape = originalShape
+        return y % 1
     
     def deriv(self, points):
-        points.shape = (-1, 2)
-        return np.repeat(0., len(points))
+        nPoints = int(points.size / 2)
+        return np.repeat(0., nPoints)
     
-    def theta(self, points):
-        points.shape = (-1, 2)
-        return np.repeat(0., len(points))
+    # def theta(self, points):
+    #     nPoints = int(points.size / 2)
+    #     return np.repeat(0., nPoints)
 
 class LinearMapping(Mapping):
     @property
@@ -101,12 +104,16 @@ class LinearMapping(Mapping):
         self.slope = slope
 
     def __call__(self, points, zeta=0.):
+        originalShape = points.shape
         points.shape = (-1, 2)
-        return (points[:,1] + self.slope*(zeta - points[:,0]))
+        x = points[:,0]
+        y = points[:,1]
+        points.shape = originalShape
+        return y + self.slope*(zeta - x)
     
     def deriv(self, points):
-        points.shape = (-1, 2)
-        return np.repeat(self.slope, len(points))
+        nPoints = int(points.size / 2)
+        return np.repeat(self.slope, nPoints)
     
     def __repr__(self):
         return f"{self.__class__.__name__}({self.slope})"
@@ -121,13 +128,19 @@ class QuadraticMapping(Mapping):
         self.b = b
 
     def __call__(self, points, zeta=0.):
+        originalShape = points.shape
         points.shape = (-1, 2)
         x = points[:,0]
-        return (points[:,1] + self.a*(zeta**2 - x**2) + self.b*(zeta - x))
+        y = points[:,1]
+        points.shape = originalShape
+        return y + self.a*(zeta**2 - x**2) + self.b*(zeta - x)
     
     def deriv(self, points):
+        originalShape = points.shape
         points.shape = (-1, 2)
-        return 2*self.a*points[:,0] + self.b
+        x = points[:,0]
+        points.shape = originalShape
+        return 2*self.a*x + self.b
     
     def __repr__(self):
         return f"{self.__class__.__name__}({self.a}, {self.b})"
@@ -142,13 +155,18 @@ class SinusoidalMapping(Mapping):
         self.phase = phase
 
     def __call__(self, points, zeta=0.):
+        originalShape = points.shape
         points.shape = (-1, 2)
         offsets = points[:,1] - self.A*np.sin(points[:,0] - self.phase)
+        points.shape = originalShape
         return (self.A*np.sin(zeta - self.phase) + offsets)
     
     def deriv(self, points):
+        originalShape = points.shape
         points.shape = (-1, 2)
-        return self.A*np.cos(points[:,0] - self.phase)
+        x = points[:,0]
+        points.shape = originalShape
+        return self.A*np.cos(x - self.phase)
     
     def __repr__(self):
         return f"{self.__class__.__name__}({self.A}, {self.phase})"
@@ -237,9 +255,13 @@ class DirichletBoundaryCondition(BoundaryCondition):
         nodeX = self.sim.nodeX[iPlane]
         nodeXp1 = self.sim.nodeX[iPlane + 1]
         isBoundaryMinus = isBoundaryPlus = False
-        self.gradphis.fill(0.)
         self.inds.fill(-1)
         i0 = i1 = i2 = i3 = -1
+        
+        self.gradphis.fill(0.)
+        gradRho = 1 / (nodeXp1 - nodeX)
+        self.gradphis[:,0,1] = np.array((-gradRho, -gradRho, gradRho, gradRho))
+        
         # ignore warnings about nan's where p doesn't map to any boundaries
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', r'invalid value encountered in')
@@ -248,39 +270,80 @@ class DirichletBoundaryCondition(BoundaryCondition):
             zetaTop = float(zetaTop)
             isBoundaryBottom = (zetaBottom > nodeX) * (zetaBottom < nodeXp1)
             isBoundaryTop = (zetaTop > nodeX) * (zetaTop < nodeXp1)
-            p.shape = (2,)
             if isBoundaryBottom and (zetaBottom <= p[0]):
                 zetaMinus = zetaBottom
                 isBoundaryMinus = True
-                self.gradphis[0,0,1] = 1 / self.sim.dx[iPlane]
-                self.gradphis[1,0,1] = -self.gradphis[0,0,1]
-                self.phis[0] = (zetaMinus - nodeX) * self.gradphis[0,0,1]
+                
+                dBdx, dBdy = self.B.deriv(p, 'bottom')
+                self.gradphis[0,0,0] = dBdx / self.sim.dx[iPlane]
+                self.gradphis[1,0,0] = -self.gradphis[0,0,0]
+                self.gradphis[2:,0,1] = \
+                    (nodeXp1 - zetaMinus + dBdx*(p[0] - nodeXp1)) / \
+                    (zetaMinus - nodeXp1)**2
+                self.gradphis[:2,0,1] = -self.gradphis[2:,0,1]
+                
+                self.gradphis[0,1,0] = dBdy / self.sim.dx[iPlane]
+                self.gradphis[1,1,0] = -self.gradphis[0,1,0]
+                self.gradphis[2:,1,1] = dBdy*(p[0] - nodeXp1) \
+                                      / (zetaMinus - nodeXp1)**2
+                self.gradphis[:2,1,1] = -self.gradphis[2:,1,1]
+                
+                self.phis[0] = (zetaMinus - nodeX) / self.sim.dx[iPlane]
                 self.phis[1] = 1 - self.phis[0]
                 g0 = self.g(np.array((nodeXp1, 0)))
                 self.phis[0] *= g0
-                self.gradphis[0,0,1] *= g0
-                self.phis[1] *= self.g(np.array((nodeX, 0)))
+                self.gradphis[0,:,0] *= g0
+                g1 = self.g(np.array((nodeX, 0)))
+                self.phis[1] *= g1
+                self.gradphis[1,:,0] *= g1
             if isBoundaryTop and (zetaTop <= p[0]):
                 zetaMinus = zetaTop
                 isBoundaryMinus = True
                 self.phis[0] = (zetaMinus - nodeX) / self.sim.dx[iPlane]
                 self.phis[1] = 1 - self.phis[0]
-                self.phis[0] *= self.g(np.array((nodeXp1, 1)))
-                self.phis[1] *= self.g(np.array((nodeX, 1)))
+                g0 = self.g(np.array((nodeXp1, 1)))
+                self.phis[0] *= g0
+                self.gradphis[0,:,0] *= g0
+                g1 = self.g(np.array((nodeX, 1)))
+                self.phis[1] *= g1
+                self.gradphis[1,:,0] *= g1
             if isBoundaryBottom and (zetaBottom > p[0]):
                 zetaPlus = zetaBottom
                 isBoundaryPlus = True
                 self.phis[2] = (zetaPlus - nodeX) / self.sim.dx[iPlane]
                 self.phis[3] = 1 - self.phis[2]
-                self.phis[2] *= self.g(np.array((nodeXp1, 0)))
-                self.phis[3] *= self.g(np.array((nodeX, 0)))
+                g2 = self.g(np.array((nodeXp1, 0)))
+                self.phis[2] *= g2
+                self.gradphis[2,:,0] *= g2
+                g3 = self.g(np.array((nodeX, 0)))
+                self.phis[3] *= g3
+                self.gradphis[3,:,0] *= g3
             if isBoundaryTop and (zetaTop > p[0]):
                 zetaPlus = zetaTop
                 isBoundaryPlus = True
+                
+                dBdx, dBdy = self.B.deriv(p, 'top')
+                self.gradphis[2,0,0] = dBdx / self.sim.dx[iPlane]
+                self.gradphis[3,0,0] = -self.gradphis[0,0,0]
+                self.gradphis[:2,0,1] = \
+                    (nodeX - zetaPlus + dBdx*(nodeX - p[0])) / \
+                    (zetaPlus - nodeX)**2
+                self.gradphis[2:,0,1] = -self.gradphis[:2,0,1]
+                
+                self.gradphis[2,1,0] = dBdy / self.sim.dx[iPlane]
+                self.gradphis[3,1,0] = -self.gradphis[0,1,0]
+                self.gradphis[:2,1,1] = dBdy*(p[0] - nodeX) \
+                                      / (zetaPlus - nodeX)**2
+                self.gradphis[2:,1,1] = -self.gradphis[:2,1,1]
+                
                 self.phis[2] = (zetaPlus - nodeX) / self.sim.dx[iPlane]
                 self.phis[3] = 1 - self.phis[2]
-                self.phis[2] *= self.g(np.array((nodeXp1, 1)))
-                self.phis[3] *= self.g(np.array((nodeX, 1)))
+                g2 = self.g(np.array((nodeXp1, 1)))
+                self.phis[2] *= g2
+                self.gradphis[2,:,0] *= g2
+                g3 = self.g(np.array((nodeX, 1)))
+                self.phis[3] *= g3
+                self.gradphis[3,:,0] *= g3
         if not isBoundaryMinus:
             zetaMinus = nodeX
             mapL = float(self.sim.mapping(p, nodeX))
@@ -292,11 +355,12 @@ class DirichletBoundaryCondition(BoundaryCondition):
             self.phis[0] = 1 - self.phis[1]
             self.gradphis[1,1,0] = self.sim.idy[iPlane][i1]
             self.gradphis[0,1,0] = -self.gradphis[1,1,0]
+            self.gradphis[:2,0,0] = -self.sim.mapping.deriv(p)*self.gradphis[:2,1,0]
             ##### if inds[0] on the left or lower boundary #####
             if (iPlane == 0) or (i0 < 0):
                 g0 = self.g(np.array((nodeX, self.sim.nodeY[iPlane][i1])))
                 self.phis[0] *= g0
-                self.gradphis[0,1,0] *= g0
+                self.gradphis[0,:,0] *= g0
                 i0 = -1 # necessary for left boundary
             else: # inds[0] is interior
                 i0 += (iPlane - 1)*self.nYnodes
@@ -304,7 +368,7 @@ class DirichletBoundaryCondition(BoundaryCondition):
             if (iPlane == 0) or (i1 >= self.nYnodes):
                 g1 = self.g(np.array((nodeX, self.sim.nodeY[iPlane][i1+1])))
                 self.phis[1] *= g1
-                self.gradphis[1,1,0] *= g1
+                self.gradphis[1,:,0] *= g1
                 i1 = -1 # necessary for right boundary
             else: # inds[1] is interior
                 i1 += (iPlane - 1)*self.nYnodes
@@ -319,11 +383,12 @@ class DirichletBoundaryCondition(BoundaryCondition):
             self.phis[2] = 1 - self.phis[3]
             self.gradphis[3,1,0] = self.sim.idy[iPlane+1][i3]
             self.gradphis[2,1,0] = -self.gradphis[3,1,0]
+            self.gradphis[2:,0,0] = -self.sim.mapping.deriv(p)*self.gradphis[2:,1,0]
             ##### if inds[2] on the right or lower boundary #####
             if (iPlane == self.nXnodes) or (i2 < 0):
                 g2 = self.g(np.array((nodeXp1, self.sim.nodeY[iPlane+1][i3])))
                 self.phis[2] *= g2
-                self.gradphis[2,1,0] *= g2
+                self.gradphis[2,:,0] *= g2
                 i2 = -1
             else:
                 i2 += iPlane*self.nYnodes
@@ -331,28 +396,23 @@ class DirichletBoundaryCondition(BoundaryCondition):
             if (iPlane == self.nXnodes) or (i3 >= self.nYnodes):
                 g3 = self.g(np.array((nodeXp1, self.sim.nodeY[iPlane+1][i3+1])))
                 self.phis[3] *= g3
-                self.gradphis[3,1,0] *= g3
+                self.gradphis[3,:,0] *= g3
                 i3 = -1
             else:
                 i3 += iPlane*self.nYnodes
-        p.shape = (2,)
-        gradRho = 1 / (zetaPlus - zetaMinus)
-        rho = (p[0] - zetaMinus) * gradRho
-        
+        rho = (p[0] - zetaMinus) / (zetaPlus - zetaMinus)        
         self.inds[:] = (i0, i1, i2, i3)
         
-        self.gradphis[:,0,0] = np.array((-gradRho, -gradRho, gradRho, gradRho)) * self.phis
-        self.gradphis[:,1,0] *= np.array((1-rho, 1-rho, rho, rho))
-        # Gradients along the coordinate direction
-        self.gradphis[:,0,0] -= self.sim.mapping.deriv(p)*self.gradphis[:,1,0]
+        self.gradphis[:,:,1] *= self.phis.reshape(4,1)
+        self.gradphis[:,:,0] *= np.array((1-rho, 1-rho, rho, rho)).reshape(4,1)
         
         # At this point self.phis = phi_FEM, so we then multiply by ramp
         self.phis[0:2] *= (1 - rho)
         self.phis[2:4] *= rho
-        if np.any(self.inds >= self.sim.nNodes):
-            print('Too large index encountered')
-        if (not np.any(self.inds < 0)) and (self.phis.sum() - 1 > 1e-5):
-            print('Interior phis not summing to unity')
+        # if np.any(self.inds >= self.sim.nNodes):
+        #     print('Too large index encountered')
+        # if (not np.any(self.inds < 0)) and (self.phis.sum() - 1 > 1e-5):
+        #     print('Interior phis not summing to unity')
         return self.phis, self.gradphis.sum(axis=-1), self.inds
 
 
@@ -641,8 +701,8 @@ class FciFemSim(metaclass=ABCMeta):
                                     (gradphis[alpha] @ self.velocity) * phis[beta] +
                                     (gradphis[alpha] @ (self.diffusivity @ gradphis[beta])) )
                             else: # i and j are both interior
-                                if (phis[alpha] < 0) or (phis[beta] < 0):
-                                    print('negative phis encountered in interior')
+                                # if (phis[alpha] < 0) or (phis[beta] < 0):
+                                #     print('negative phis encountered in interior')
                                 if not massLumping:
                                     Mdata[index] = quadWeights[iQ] * phis[alpha] * phis[beta]
                                 Adata[index] = quadWeights[iQ] * (gradphis[alpha] @ self.velocity) * phis[beta]

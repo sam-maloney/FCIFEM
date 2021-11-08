@@ -17,24 +17,28 @@ from timeit import default_timer
 
 # ##### standard isotropic and periodic test problem
 # def f(p):
+#     originalShape = p.shape
 #     p.shape = (-1,2)
-#     return np.sin(p[:,0])*np.sin(2*np.pi*p[:,1])
+#     x = p[:,0]
+#     y = p[:,1]
+#     p.shape = originalShape
+#     return np.sin(x)*np.sin(2*np.pi*y)
 
 # uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
 
 # class TestProblem:
 #     def __call__(self, p):
-#         p.shape = (-1,2)
-#         return np.ones(len(p))
+#         nPoints = int(p.size / 2)
+#         return np.ones(nPoints)
     
 #     def solution(self, p):
-#         p.shape = (-1,2)
-#         return np.ones(len(p))
+#         nPoints = int(p.size / 2)
+#         return np.ones(nPoints)
 
 # class StraightBoundaryFunction:
 #     def __call__(self, p):
-#         p.shape = (-1,2)
-#         return np.full(len(p), np.nan), np.full(len(p), np.nan)
+#         nPoints = int(p.size / 2)
+#         return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
 
 # B = StraightBoundaryFunction()
 
@@ -43,18 +47,22 @@ class TestProblem:
     A = 0.02
     
     def __call__(self, p):
+        originalShape = p.shape
         p.shape = (-1,2)
         x = p[:,0]
         y = p[:,1]
         n = self.n
         A = self.A
+        p.shape = originalShape
         return 6*A*n*x*np.cos(n*(y - A*x**2)) + \
             (4*A**2*n**2*x**3 + n**2*x)*np.sin(n*(y - A*x**2))
     
     def solution(self, p):
+        originalShape = p.shape
         p.shape = (-1,2)
         x = p[:,0]
         y = p[:,1]
+        p.shape = originalShape
         return x*np.sin(self.n*(y - self.A*x**2))
         
 f = TestProblem()
@@ -67,25 +75,42 @@ class QaudraticBoundaryFunction:
         self.invA = 1/A
     
     def __call__(self, p):
+        originalShape = p.shape
         p.shape = (-1,2)
         x = p[:,0]
         y = p[:,1]
         zetaBottom = np.sqrt(x**2 - self.invA*y)
         zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
+        p.shape = originalShape
         return zetaBottom, zetaTop
     
-    def deriv(self, p, dim):
+    def deriv(self, p, boundary):
+        originalShape = p.shape
         p.shape = (-1,2)
         x = p[:,0]
         y = p[:,1]
-        if dim == 0: # x-derivative
-            zetaBottom = x / np.sqrt(x**2 - self.invA*y)
-            zetaTop = x / np.sqrt(x**2 + self.invA*(1 - y))
-            return zetaBottom, zetaTop
-        if dim == 1: # y-derivative
-            zetaBottom = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
-            zetaTop = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
-            return zetaBottom, zetaTop
+        if boundary == 'bottom':
+            dBdx = x / np.sqrt(x**2 - self.invA*y)
+            dBdy = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
+        elif boundary == 'top':
+            dBdx = x / np.sqrt(x**2 + self.invA*(1 - y))
+            dBdy = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
+        p.shape = originalShape
+        return dBdx, dBdy
+    
+    # def deriv(self, p, dim):
+    #     originalShape = p.shape
+    #     p.shape = (-1,2)
+    #     x = p[:,0]
+    #     y = p[:,1]
+    #     if dim == 0: # x-derivative
+    #         zetaBottom = x / np.sqrt(x**2 - self.invA*y)
+    #         zetaTop = x / np.sqrt(x**2 + self.invA*(1 - y))
+    #     elif dim == 1: # y-derivative
+    #         zetaBottom = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
+    #         zetaTop = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
+    #     p.shape = originalShape
+    #     return zetaBottom, zetaTop
     
 B = QaudraticBoundaryFunction(f.A)
 
@@ -106,7 +131,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 2
-stop = 6
+stop = 5
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
