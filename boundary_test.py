@@ -116,8 +116,8 @@ kwargs={
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 2
-stop = 5
+start = 1
+stop = 3
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -133,13 +133,13 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    NY = NX
+    NY = 10*NX
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     
     # BC = fcifem.PeriodicBoundaryCondition(sim)
-    BC = fcifem.DirichletBoundaryCondition(sim, f.solution, B)
+    BC = fcifem.DirichletBoundaryCondition(sim, f.solution, B, NDX=60)
     sim.setInitialConditions(np.zeros(BC.nNodes), mapped=False, BC=BC)
     
     # sim.BC.test(np.array((5.969026041820607, 0.)), sim.BC.nXnodes)
