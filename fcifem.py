@@ -69,7 +69,7 @@ class StraightMapping(Mapping):
         points.shape = (-1, 2)
         y = points[:,1]
         points.shape = originalShape
-        return y % 1
+        return y
     
     def deriv(self, points):
         nPoints = int(points.size / 2)
@@ -213,18 +213,10 @@ class DirichletBoundaryCondition(BoundaryCondition):
         self.inds = np.empty(4, dtype='int')
         self.phis = np.empty(4)
         self.gradphis = np.empty((4,2,2))
-        # TODO: Allow user to specify self.DirichletNodes for top and bottom\
+        # TODO: Allow user to specify self.DirichletNodes for top and bottom
         self.DirichletNodes = np.tile(np.vstack(
             [np.linspace(nodeX[i], nodeX[i+1], NDX+1) for i in range(NX)]),
             (2,1)).reshape(2,-1,NDX+1)
-        # self.DirichletNodes = np.tile(np.apply_along_axis(
-        #     lambda x, NDX=NDX: np.linspace(x[0], x[1], NDX+1), 1,
-        #     sim.nodeX[np.vstack((np.arange(NX), np.arange(1,NX+1))).T]),
-        #     (2,1)).reshape(2,-1,NDX+1)
-        # if (topNodes is None) and (bottomNodes is None):
-        #     self.DirichletNodes = np.tile(sim.nodeX[np.vstack((np.arange(NX), np.arange(1,NX+1))).T], (2,1)).reshape(2,-1,2)
-        # if type(topNodes) is int:
-        #     pass
 
     def computeNodes(self):
         self.DoFs = np.vstack( (np.repeat(self.sim.nodeX[1:-1], self.sim.NY-1),

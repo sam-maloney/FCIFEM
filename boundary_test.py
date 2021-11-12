@@ -35,13 +35,6 @@ from timeit import default_timer
 #         nPoints = int(p.size / 2)
 #         return np.ones(nPoints)
 
-# class StraightBoundaryFunction:
-#     def __call__(self, p):
-#         nPoints = int(p.size / 2)
-#         return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
-
-# B = StraightBoundaryFunction()
-
 class TestProblem:
     n = 20
     A = 0.02
@@ -67,6 +60,10 @@ class TestProblem:
         
 f = TestProblem()
 uExactFunc = f.solution
+
+dfdyMax = 40*np.pi
+dfdxMax = 160*f.A*np.pi**2 + 1
+dfRatio = dfdyMax / dfdxMax
 
 class QaudraticBoundaryFunction:
     
@@ -99,12 +96,18 @@ class QaudraticBoundaryFunction:
         return dBdx, dBdy
     
 B = QaudraticBoundaryFunction(f.A)
-
 mapping = fcifem.QuadraticMapping(f.A)
+
+# class StraightBoundaryFunction:
+#     def __call__(self, p):
+#         nPoints = int(p.size / 2)
+#         return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
+
+# B = StraightBoundaryFunction()
+# mapping = fcifem.StraightMapping()
 
 # mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
 # mapping = fcifem.LinearMapping(1/(2*np.pi))
-# mapping = fcifem.StraightMapping()
 
 kwargs={
     'mapping' : mapping,
@@ -117,7 +120,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 3
+stop = 1
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -133,20 +136,25 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    NY = 10*NX
+    # NY = NX
+    NY = int(dfdyMax / (2*np.pi)) * NX
+    NDX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     
     # BC = fcifem.PeriodicBoundaryCondition(sim)
-    BC = fcifem.DirichletBoundaryCondition(sim, f.solution, B, NDX=60)
+    BC = fcifem.DirichletBoundaryCondition(sim, f.solution, B, NDX=NDX)
     sim.setInitialConditions(np.zeros(BC.nNodes), mapped=False, BC=BC)
     
     # sim.BC.test(np.array((5.969026041820607, 0.)), sim.BC.nXnodes)
     
     # Assemble the mass matrix and forcing term
-    quadRatio = int(2*np.pi*NY/NX)
-    sim.computeSpatialDiscretization(f, NQX=quadRatio, NQY=NY, Qord=2,
+    if NDX == 1:
+        Qord = 2
+    else:
+        Qord = 1
+    sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord,
                                      quadType='g', massLumping=False)
     
     try:
@@ -196,7 +204,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-sim.generatePlottingPoints(nx=1, ny=1)
+sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
@@ -211,9 +219,9 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud'
 # field = ax1.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u - uExact, shading='gouraud'
-                       ,cmap='seismic', vmin=vmin, vmax=vmax
+                       # ,cmap='seismic', vmin=vmin, vmax=vmax
                      )
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.0, 0.1, 0.2]:
@@ -266,3 +274,15 @@ plt.margins(0,0)
 
 # plt.savefig("CD_MassLumped_RK4.pdf",
 #     bbox_inches = 'tight', pad_inches = 0)
+
+
+# ##### NY = 20*NX, NDX = 32, Qord = 1
+# NX_array = np.array([  2,   4,   8,  16,  32,  64, 128])
+# E_2 = np.array([3.19128962e-02, 1.66174040e-02, 7.35715866e-03, 5.05400243e-03,
+#        1.37505435e-03, 6.28625444e-04, 1.49246335e-04])
+# E_inf = np.array([6.01267696e-02, 3.91689608e-02, 2.59411522e-02, 2.42221312e-02,
+#        8.78515282e-03, 6.51887251e-03, 3.40038087e-03])
+# t_setup = np.array([4.92162494e-01, 2.07696175e+00, 8.58752604e+00, 3.48628305e+01,
+#        1.41986197e+02, 5.63175996e+02, 2.29591821e+03])
+# t_solve = np.array([6.79264893e-03, 2.44334240e-02, 4.95543720e-02, 1.81298157e-01,
+#        1.14694606e+00, 8.82098613e+00, 6.88338451e+01])
