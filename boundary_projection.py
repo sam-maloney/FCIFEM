@@ -4,9 +4,9 @@ Created on Mon Jun  8 13:47:07 2020
 
 @author: samal
 
-NEED TO CHANGE COMPUTATION OF B VECTOR FOR THIS TO WORK!!!!!
-
 """
+
+print("\n!!!!! NEED TO CHANGE COMPUTATION OF B VECTOR FOR THIS TO WORK !!!!!\n")
 
 import numpy as np
 import matplotlib as mpl
@@ -41,6 +41,10 @@ class TestProblem:
         
 f = TestProblem()
 
+dfdyMax = 40*np.pi
+dfdxMax = 160*f.A*np.pi**2 + 1
+dfRatio = dfdyMax / dfdxMax
+
 class QaudraticBoundaryFunction:
     
     def __init__(self, A):
@@ -72,8 +76,7 @@ class QaudraticBoundaryFunction:
         return dBdx, dBdy
     
 B = QaudraticBoundaryFunction(f.A)
-
-mapping = fcifem.QuadraticMapping(f.A)
+mapping = fcifem.mappings.QuadraticMapping(f.A)
 
 kwargs={
     'mapping' : mapping,
@@ -85,8 +88,8 @@ kwargs={
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 2
-stop = 6
+start = 1
+stop = 3
 nSamples = stop - start + 1
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int32')
 E_inf = np.empty(nSamples, dtype='float64')
@@ -97,18 +100,23 @@ E_2 = np.empty(nSamples, dtype='float64')
 # therefore number of nodes equals (N+1)*(N+1)
 for iN, NX in enumerate(NX_array):
     
-    NY = NX
+    # NY = NX
+    NY = int(dfdyMax / (2*np.pi)) * NX
+    NDX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    BC = fcifem.DirichletBoundaryCondition(sim, f.solution, B)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=NDX)
     sim.setInitialConditions(np.zeros(BC.nNodes), mapped=False, BC=BC)
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     
     # Assemble the mass matrix and forcing term
-    quadRatio = int(2*np.pi*NY/NX)
-    sim.computeSpatialDiscretization(f.solution, NQX=quadRatio, NQY=NY, Qord=3,
+    if NDX == 1:
+        Qord = 2
+    else:
+        Qord = 1
+    sim.computeSpatialDiscretization(f.solution, NQX=NDX, NQY=NY, Qord=Qord,
                                      quadType='g', massLumping = False)
     
     # sim.u = sp_la.spsolve(sim.M, sim.b)
@@ -123,8 +131,8 @@ for iN, NX in enumerate(NX_array):
     
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}\n')
-    
-##### Begin Plotting Routines #####
+
+#%% Plotting
 
 # clear the current figure, if opened, and set parameters
 fig = plt.gcf()
@@ -143,8 +151,8 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-
-sim.generatePlottingPoints(nx=1, ny=1)
+# sim.generatePlottingPoints(nx=1, ny=1)
+sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 sim.computePlottingSolution()
 
 u_plot = np.sum(sim.phiPlot * sim.u[sim.indPlot], axis=1)
@@ -153,19 +161,19 @@ u_plot = np.sum(sim.phiPlot * sim.u[sim.indPlot], axis=1)
 vmin = np.min((np.min(u_plot), np.min(sim.U)))
 vmax = np.max((np.max(u_plot), np.max(sim.U)))
 
-exact_sol = f.solution(np.vstack((sim.X,sim.Y)).T)
-error = sim.U - exact_sol
+exactSol = sim.f(np.vstack((sim.X,sim.Y)).T)
+error = sim.U - exactSol
 maxAbsErr = np.max(np.abs(error))
 vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
 field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-                     ,cmap='seismic', vmin=vmin, vmax=vmax
-                     )
+                      ,cmap='seismic', vmin=vmin, vmax=vmax)
+# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
-for yi in [0.4, 0.5, 0.6]:
-    ax1.plot(x, [mapping(np.array([[0, yi]]), i) for i in x], 'k')
+for yi in [0.0, 0.1, 0.2]:
+    ax1.plot(x, [sim.mapping(np.array([[0, yi]]), i) for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')
 # ax.plot(sim.X[np.argmax(sim.U)], sim.Y[np.argmax(sim.U)],

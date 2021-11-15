@@ -13,135 +13,10 @@ import numpy as np
 # import scipy
 import ssqr
 
-from abc import ABCMeta, abstractmethod
-
 import integrators
 
-class Mapping(metaclass=ABCMeta):
-    @property
-    @abstractmethod
-    def name(self): 
-        raise NotImplementedError
 
-    @abstractmethod
-    def __call__(self, points, x=0.):
-        """Compute mapped y-coordinates from all points to given x-coordinate
-
-        Parameters
-        ----------
-        points : numpy.ndarray, shape=(n,ndim)
-            (x,y) coordinates of starting points.
-        x : float
-            x-coordinate value of plane to which points should be mapped.
-
-        Returns
-        -------
-        numpy.ndarray, shape=(n,)
-            Values of y-coordinate for all points mapped to given x-coordinate.
-
-        """
-        raise NotImplementedError
-    
-    @abstractmethod
-    def deriv(self, points):
-        """Compute dy/dx derivative of mapping function at given points.
-
-        Parameters
-        ----------
-        points : numpy.ndarray, shape=(n,ndim)
-            (x,y) coordinates of evaluation points.
-
-        Returns
-        -------
-        numpy.ndarray, shape=(n,)
-            Values of dy/dx evaluated at all points.
-
-        """
-        raise NotImplementedError
-    
-    @abstractmethod
-    def theta(self, points):
-        """Compute angle of mapping function from +x-axis at given points.
-
-        Parameters
-        ----------
-        points : numpy.ndarray, shape=(n,ndim)
-            (x,y) coordinates of evaluation points.
-
-        Returns
-        -------
-        numpy.ndarray, shape=(n,)
-            Angles of mapping function from +x-axis evaluated at all points.
-
-        """
-        raise NotImplementedError
-    
-    # def __repr__(self):
-    #     return f"{self.__class__.__name__}"
-
-class StraightMapping(Mapping):
-    @property
-    def name(self): 
-        return 'straight'
-
-    def __call__(self, points, x=0.):
-        points.shape = (-1, 2)
-        return points[:,1] % 1
-    
-    def deriv(self, points):
-        points.shape = (-1, 2)
-        return np.repeat(0., len(points))
-    
-    def theta(self, points):
-        points.shape = (-1, 2)
-        return np.repeat(0., len(points))
-
-class LinearMapping(Mapping):
-    @property
-    def name(self): 
-        return 'linear'
-    
-    def __init__(self, slope):
-        self.slope = slope
-
-    def __call__(self, points, x=0.):
-        points.shape = (-1, 2)
-        return (points[:,1] + self.slope*(x - points[:,0])) % 1
-    
-    def deriv(self, points):
-        points.shape = (-1, 2)
-        return np.repeat(self.slope, len(points))
-    
-    def theta(self, points):
-        points.shape = (-1, 2)
-        return np.repeat(np.arctan(self.slope), len(points))
-
-class SinusoidalMapping(Mapping):
-    @property
-    def name(self): 
-        return 'sinusoidal'
-    
-    def __init__(self, amplitude, phase):
-        self.A = amplitude
-        self.phase = phase
-
-    def __call__(self, points, x=0.):
-        points.shape = (-1, 2)
-        offsets = points[:,1] - self.A*np.sin(points[:,0] - self.phase)
-        return (self.A*np.sin(x - self.phase) + offsets) % 1 % 1
-    
-    def deriv(self, points):
-        points.shape = (-1, 2)
-        return self.A*np.cos(points[:,0] - self.phase)
-    
-    def theta(self, points):
-        points.shape = (-1, 2)
-        return np.arctan(self.A*np.cos(points[:,0] - self.phase))
-    
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.A},{self.phase})"
-
-class FciFemSim(metaclass=ABCMeta):
+class FciFemSim:
     """Class for flux-coordinate independent FEM (FCIFEM) method.
     Implements the convection-diffusion equation on a rectangular domain
     [x, y] = [0...2*pi, 0...1] with doubly-periodic boundary conditions.
@@ -381,8 +256,8 @@ class FciFemSim(metaclass=ABCMeta):
 
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX)
-            mapR = self.mapping(quads, self.nodeX[iPlane+1])
+            mapL = self.mapping(quads, nodeX) % 1
+            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]

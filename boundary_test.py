@@ -17,11 +17,8 @@ from timeit import default_timer
 
 # ##### standard isotropic and periodic test problem
 # def f(p):
-#     originalShape = p.shape
-#     p.shape = (-1,2)
-#     x = p[:,0]
-#     y = p[:,1]
-#     p.shape = originalShape
+#     x = p.reshape(-1,2)[:,0]
+#     y = p.reshape(-1,2)[:,1]
 #     return np.sin(x)*np.sin(2*np.pi*y)
 
 # uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
@@ -40,26 +37,19 @@ class TestProblem:
     A = 0.02
     
     def __call__(self, p):
-        originalShape = p.shape
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
         n = self.n
         A = self.A
-        p.shape = originalShape
         return 6*A*n*x*np.cos(n*(y - A*x**2)) + \
             (4*A**2*n**2*x**3 + n**2*x)*np.sin(n*(y - A*x**2))
     
     def solution(self, p):
-        originalShape = p.shape
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
-        p.shape = originalShape
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
         return x*np.sin(self.n*(y - self.A*x**2))
         
 f = TestProblem()
-uExactFunc = f.solution
 
 dfdyMax = 40*np.pi
 dfdxMax = 160*f.A*np.pi**2 + 1
@@ -72,31 +62,25 @@ class QaudraticBoundaryFunction:
         self.invA = 1/A
     
     def __call__(self, p):
-        originalShape = p.shape
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
         zetaBottom = np.sqrt(x**2 - self.invA*y)
         zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
-        p.shape = originalShape
         return zetaBottom, zetaTop
     
     def deriv(self, p, boundary):
-        originalShape = p.shape
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
         if boundary == 'bottom':
             dBdx = x / np.sqrt(x**2 - self.invA*y)
             dBdy = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
         elif boundary == 'top':
             dBdx = x / np.sqrt(x**2 + self.invA*(1 - y))
             dBdy = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
-        p.shape = originalShape
         return dBdx, dBdy
     
 B = QaudraticBoundaryFunction(f.A)
-mapping = fcifem.QuadraticMapping(f.A)
+mapping = fcifem.mappings.QuadraticMapping(f.A)
 
 # class StraightBoundaryFunction:
 #     def __call__(self, p):
@@ -104,10 +88,10 @@ mapping = fcifem.QuadraticMapping(f.A)
 #         return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
 
 # B = StraightBoundaryFunction()
-# mapping = fcifem.StraightMapping()
+# mapping = fcifem.mappings.StraightMapping()
 
-# mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
-# mapping = fcifem.LinearMapping(1/(2*np.pi))
+# mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
+# mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
 
 kwargs={
     'mapping' : mapping,
@@ -120,7 +104,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 1
+stop = 3
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -143,17 +127,18 @@ for iN, NX in enumerate(NX_array):
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     
-    # BC = fcifem.PeriodicBoundaryCondition(sim)
-    BC = fcifem.DirichletBoundaryCondition(sim, f.solution, B, NDX=NDX)
+    # BC = fcifem.boundaries.PeriodicBoundary(sim)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=NDX)
     sim.setInitialConditions(np.zeros(BC.nNodes), mapped=False, BC=BC)
     
-    # sim.BC.test(np.array((5.969026041820607, 0.)), sim.BC.nXnodes)
+    # sim.BC.test(np.array((5.969026041820607, 0.)), simscrobbling.BC.nXnodes)
     
     # Assemble the mass matrix and forcing term
     if NDX == 1:
         Qord = 2
     else:
         Qord = 1
+    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord,
                                      quadType='g', massLumping=False)
     
@@ -177,15 +162,15 @@ for iN, NX in enumerate(NX_array):
     start_time = default_timer()
     
     # compute the analytic solution and error norms
-    uExact = uExactFunc(sim.nodes)
+    uExact = f.solution(sim.nodes)
     
     E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf)
     E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nNodes)
     
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}\n')
-    
-##### Begin Plotting Routines #####
+
+#%% Plotting
 
 # clear the current figure, if opened, and set parameters
 fig = plt.gcf()
@@ -204,14 +189,15 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
+# sim.generatePlottingPoints(nx=1, ny=1)
 sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
 # vmax = np.max(sim.U)
 
-exactSol = uExactFunc(np.vstack((sim.X,sim.Y)).T)
-F = f(np.vstack((sim.X,sim.Y)).T)
+exactSol = sim.f.solution(np.vstack((sim.X,sim.Y)).T)
+F = sim.f(np.vstack((sim.X,sim.Y)).T)
 error = sim.U - exactSol
 maxAbsErr = np.max(np.abs(error))
 # maxAbsErr = np.max(np.abs(sim.u - uExact))
@@ -219,13 +205,13 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud'
-# field = ax1.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u - uExact, shading='gouraud'
-                       # ,cmap='seismic', vmin=vmin, vmax=vmax
-                     )
+field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+                      ,cmap='seismic', vmin=vmin, vmax=vmax)
+# field = ax1.tripcolor(sim.X, sim.Y, F, shading='gouraud')
+# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.0, 0.1, 0.2]:
-    ax1.plot(x, [mapping(np.array([[0, yi]]), i) for i in x], 'k')
+    ax1.plot(x, [sim.mapping(np.array([[0, yi]]), i) for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')
 # ax.plot(sim.X[np.argmax(sim.U)], sim.Y[np.argmax(sim.U)],

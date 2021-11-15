@@ -15,9 +15,9 @@ import fcifem
 
 from timeit import default_timer
 
-# mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
-mapping = fcifem.LinearMapping(1/(2*np.pi))
-# mapping = fcifem.StraightMapping()
+# mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
+mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
+# mapping = fcifem.mappings.StraightMapping()
 
 class slantedTestProblem:
     n = 10
@@ -28,19 +28,16 @@ class slantedTestProblem:
     A = 1/(2*(-4*p2-1)*n**2)
     
     def __call__(self, p):
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
         _2py = 2*np.pi*y
         return -np.sin(self.n*(_2py - x))*(1 + np.sin(_2py))*0.5
     
     def solution(self, p):
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
         _2py = 2*np.pi*y
         n2pyx = self.n*(_2py - x)
-        # n = self.n
         return self.A*np.sin(n2pyx) + self.B*np.sin(_2py)*np.sin(n2pyx) \
                                     + self.C*np.cos(_2py)*np.cos(n2pyx)
         
@@ -49,8 +46,9 @@ uExactFunc = f.solution
 
 # ##### standard isotropic test problem
 # def f(p):
-#     p.shape = (-1,2)
-#     return np.sin(p[:,0])*np.sin(2*np.pi*p[:,1])
+#     x = p.reshape(-1,2)[:,0]
+#     y = p.reshape(-1,2)[:,1]
+#     return np.sin(x)*np.sin(2*np.pi*y)
 
 # uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
 
@@ -64,8 +62,8 @@ kwargs={
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 2
-stop = 4
+start = 1
+stop = 3
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -164,8 +162,8 @@ for iN, NX in enumerate(NX_array):
     
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}\n')
-    
-##### Begin Plotting Routines #####
+
+#%% Plotting
 
 # clear the current figure, if opened, and set parameters
 fig = plt.gcf()
@@ -184,7 +182,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-sim.generatePlottingPoints(nx=1, ny=1)
+sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
@@ -198,10 +196,11 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-# field = ax1.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u - uExact, shading='gouraud'
-                     ,cmap='seismic', vmin=vmin, vmax=vmax
-                     )
+# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+#                      ,cmap='seismic', vmin=vmin, vmax=vmax)
+# field = ax1.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u - uExact
+#                     ,shading='gouraud', cmap='seismic', vmin=vmin, vmax=vmax)
+field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.4, 0.5, 0.6]:
     ax1.plot(x, [sim.BC.mapping(np.array([[0, yi]]), i) for i in x], 'k')
