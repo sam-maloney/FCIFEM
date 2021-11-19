@@ -16,25 +16,44 @@ import fcifem
 from timeit import default_timer
 
 # ##### standard isotropic and periodic test problem
-# def f(p):
-#     x = p.reshape(-1,2)[:,0]
-#     y = p.reshape(-1,2)[:,1]
-#     return np.sin(x)*np.sin(2*np.pi*y)
-
-# uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
+# class sinXsinY:
+#     def __call__(self, p):
+#         x = p.reshape(-1,2)[:,0]
+#         y = p.reshape(-1,2)[:,1]
+#         return np.sin(x)*np.sin(2*np.pi*y)
+    
+#     def solution(self, p):
+#         return (1 / (1 + 4*np.pi**2)) * self(p)
 
 # class TestProblem:
 #     def __call__(self, p):
-#         nPoints = int(p.size / 2)
-#         return np.ones(nPoints)
+#         return np.ones(int(p.size / 2))
     
 #     def solution(self, p):
-#         nPoints = int(p.size / 2)
-#         return np.ones(nPoints)
+#         return np.ones(int(p.size / 2))
+
+# function for quadratic patch test
+class linearPatch():
+    A = 0.02
+    
+    dfdyMax = 2.
+    dfdxMax = 1.
+    
+    def __call__(self, p):
+        return np.zeros(int(p.size / 2))
+    
+    def solution(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        return x + 2*y
+
 
 class TestProblem:
     n = 20
     A = 0.02
+    
+    dfdyMax = 40*np.pi
+    dfdxMax = 160*A*np.pi**2 + 1
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
@@ -50,37 +69,58 @@ class TestProblem:
         return x*np.sin(self.n*(y - self.A*x**2))
         
 f = TestProblem()
+# f = linearPatch()
 
-dfdyMax = 40*np.pi
-dfdxMax = 160*f.A*np.pi**2 + 1
-dfRatio = dfdyMax / dfdxMax
+dfRatio = f.dfdyMax / f.dfdxMax
 
-class QaudraticBoundaryFunction:
+# class QaudraticBoundaryFunction:
+#     def __init__(self, A):
+#         self.A = A
+#         self.invA = 1/A
     
-    def __init__(self, A):
-        self.A = A
-        self.invA = 1/A
+#     def __call__(self, p):
+#         x = p.reshape(-1,2)[:,0]
+#         y = p.reshape(-1,2)[:,1]
+#         zetaBottom = np.sqrt(x**2 - self.invA*y)
+#         zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
+#         return zetaBottom, zetaTop
+    
+#     def deriv(self, p, boundary):
+#         x = p.reshape(-1,2)[:,0]
+#         y = p.reshape(-1,2)[:,1]
+#         if boundary == 'bottom':
+#             dBdx = x / np.sqrt(x**2 - self.invA*y)
+#             dBdy = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
+#         elif boundary == 'top':
+#             dBdx = x / np.sqrt(x**2 + self.invA*(1 - y))
+#             dBdy = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
+#         return dBdx, dBdy
+    
+# B = QaudraticBoundaryFunction(f.A)
+# mapping = fcifem.mappings.QuadraticMapping(f.A)
+
+class LinearBoundaryFunction:
+    def __init__(self, slope):
+        self.slope = slope
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        zetaBottom = np.sqrt(x**2 - self.invA*y)
-        zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
+        zetaBottom = x - y/self.slope
+        zetaTop = x + (1-y)/self.slope
         return zetaBottom, zetaTop
     
     def deriv(self, p, boundary):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
         if boundary == 'bottom':
-            dBdx = x / np.sqrt(x**2 - self.invA*y)
-            dBdy = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
+            dBdx = 1.
+            dBdy = -1./self.slope
         elif boundary == 'top':
-            dBdx = x / np.sqrt(x**2 + self.invA*(1 - y))
-            dBdy = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
+            dBdx = 1.
+            dBdy = -1./self.slope
         return dBdx, dBdy
-    
-B = QaudraticBoundaryFunction(f.A)
-mapping = fcifem.mappings.QuadraticMapping(f.A)
+
+mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
+B = LinearBoundaryFunction(mapping.slope)
 
 # class StraightBoundaryFunction:
 #     def __call__(self, p):
@@ -98,13 +138,13 @@ kwargs={
     'dt' : 1.,
     'velocity' : np.array([0., 0.]), # Makes the advection matrix zero
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.,
-    'py' : 0.,
+    'px' : 0.1,
+    'py' : 0.1,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
 start = 1
-stop = 3
+stop = 8
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -120,8 +160,8 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    # NY = NX
-    NY = int(dfdyMax / (2*np.pi)) * NX
+    NY = NX
+    # NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
     NDX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
 
     # allocate arrays and compute grid
@@ -130,14 +170,13 @@ for iN, NX in enumerate(NX_array):
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
     BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=NDX)
     sim.setInitialConditions(np.zeros(BC.nNodes), mapped=False, BC=BC)
-    
-    # sim.BC.test(np.array((5.969026041820607, 0.)), simscrobbling.BC.nXnodes)
-    
+        
     # Assemble the mass matrix and forcing term
-    if NDX == 1:
-        Qord = 2
-    else:
-        Qord = 1
+    # if NDX == 1:
+    #     Qord = 2
+    # else:
+    #     Qord = 1
+    Qord = 5
     sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord,
                                      quadType='g', massLumping=False)
@@ -173,7 +212,8 @@ for iN, NX in enumerate(NX_array):
 #%% Plotting
 
 # clear the current figure, if opened, and set parameters
-fig = plt.gcf()
+# fig = plt.gcf()
+fig = plt.figure(4)
 fig.clf()
 fig.set_size_inches(7.75,3)
 plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
@@ -190,7 +230,9 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 # sim.generatePlottingPoints(nx=1, ny=1)
-sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
+sim.generatePlottingPoints(nx=1, ny=1)
+# sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
+# sim.generatePlottingPoints(nx=int(NY/NX), ny=int(NY/NX))
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
@@ -210,7 +252,8 @@ field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
 # field = ax1.tripcolor(sim.X, sim.Y, F, shading='gouraud')
 # field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
-for yi in [0.0, 0.1, 0.2]:
+# for yi in [0.0, 0.1, 0.2]:
+for yi in [0.0]:
     ax1.plot(x, [sim.mapping(np.array([[0, yi]]), i) for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')
@@ -221,8 +264,10 @@ cbar = plt.colorbar(field)
 cbar.formatter.set_powerlimits((0, 0))
 plt.xlabel(r'$x$')
 plt.ylabel(r'$y$', rotation=0)
-plt.xticks(np.linspace(0, 2*np.pi, 7), 
-    ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+plt.xticks(np.linspace(0, 2*np.pi, 5), 
+    ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
+# plt.xticks(np.linspace(0, 2*np.pi, 7), 
+#     ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
 plt.margins(0,0)
 
 # plot the error convergence
@@ -272,3 +317,14 @@ plt.margins(0,0)
 #        1.41986197e+02, 5.63175996e+02, 2.29591821e+03])
 # t_solve = np.array([6.79264893e-03, 2.44334240e-02, 4.95543720e-02, 1.81298157e-01,
 #        1.14694606e+00, 8.82098613e+00, 6.88338451e+01])
+
+# ##### NY = 20*NX, NDX = 32, Qord = 2
+# NX_array = np.array([ 2,  4,  8, 16, 32, 64])
+# E_2 = np.array([3.20631362e-02, 1.38357481e-02, 4.66860478e-03, 2.56289445e-03,
+#         9.61139994e-03, 1.37399231e-03])
+# E_inf = np.array([9.04214930e-02, 5.24540041e-02, 1.64607034e-02, 1.43771064e-02,
+#        9.37708754e-02, 1.07042116e-02])
+# t_setup = np.array([1.93709404e+00, 8.34575381e+00, 3.42601427e+01, 1.41035787e+02,
+#        5.65862695e+02, 2.32414412e+03])
+# t_solve = np.array([7.75411818e-03, 2.43537831e-02, 4.95607180e-02, 1.78673380e-01,
+#        1.11589643e+00, 9.6233015e+00])

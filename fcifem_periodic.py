@@ -316,6 +316,8 @@ class FciFemSim:
     def computeSpatialDiscretizationLinearVCI(self, f=None, NQX=1, NQY=None, Qord=2,
                                       quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
+        Implements linear variationally consistent integration using assumed
+        strain method of Chen2013 https://doi.org/10.1002/nme.4512
         
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
@@ -470,6 +472,8 @@ class FciFemSim:
     def computeSpatialDiscretizationQuadraticVCI(self, f=None, NQX=1, NQY=None, Qord=2,
                                       quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
+        Implements quadratic variationally consistent integration using assumed
+        strain method of Chen2013 https://doi.org/10.1002/nme.4512
         
         K is the stiffness matrix from the diffusion term
         A is the advection matrix

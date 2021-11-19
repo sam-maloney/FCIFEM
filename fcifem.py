@@ -302,6 +302,8 @@ class FciFemSim:
     def computeSpatialDiscretizationLinearVCI(self, f=None, NQX=1, NQY=None, Qord=2,
                                           quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
+        Implements linear variationally consistent integration using assumed
+        strain method of Chen2013 https://doi.org/10.1002/nme.4512
         
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
@@ -387,28 +389,27 @@ class FciFemSim:
             quads += [self.nodeX[iPlane], 0]
             
             for iQ, quad in enumerate(quads):
-                if f is not None:
-                    fq = f(quad)
                 phis, gradphis, inds = self.BC(quad, iPlane)
                 quadWeight = quadWeights[iQ]
-                self.store.append((inds, phis, gradphis, quadWeight))
+                self.store.append((inds, phis, gradphis, quadWeight, quad))
                 self.areas[inds] += quadWeight
                 self.xis[inds] -= gradphis * quadWeight   
-                for alpha, i in enumerate(inds):
-                    if i < 0:
-                        continue # move to next i if boundary node
-                    self.u_weights[i] += quadWeights[iQ] * phis[alpha]
-                    if f is not None:
-                        self.b[i] += quadWeights[iQ] * fq * phis[alpha]
-                
+        
+        # self.gradphiSumsOld = -self.xis[0:-1]
+        # self.gradphiSumsNew = np.zeros((nNodes, 2))
         self.xis /= self.areas.reshape(-1,1)
-        self.xis[-1] = 0.
                     
-        for iQ, (inds, phis, gradphis, quadWeight) in enumerate(self.store):
-            testgrads = gradphis + self.xis[inds]
+        for iQ, (inds, phis, gradphis, quadWeight, quad) in enumerate(self.store):
+            if f is not None:
+                fq = f(quad)
             for alpha, i in enumerate(inds):
                 if i < 0:
                     continue # move to next i if boundary node
+                testgrad = gradphis[alpha] + self.xis[i]
+                # self.gradphiSumsNew[i] += testgrad * quadWeight
+                self.u_weights[i] += quadWeight * phis[alpha]
+                if f is not None:
+                    self.b[i] += quadWeight * fq * phis[alpha]
                 for beta, j in enumerate(inds):
                     if j < 0: # j is boundary node
                         ##### Not sure if this can always be uncommmented? #####
@@ -416,13 +417,13 @@ class FciFemSim:
                         # self.b[i] -= quadWeight * (
                         #     phis[alpha] * phis[beta] )
                         self.b[i] -= quadWeight * (
-                            (testgrads[alpha] @ self.velocity) * phis[beta] +
-                            (testgrads[alpha] @ (self.diffusivity @ gradphis[beta])) )
+                            (testgrad @ self.velocity) * phis[beta] +
+                            (testgrad @ (self.diffusivity @ gradphis[beta])) )
                     else: # i and j are both interior
                         if not massLumping:
                             Mdata[index] = quadWeight * phis[alpha] * phis[beta]
-                        Adata[index] = quadWeight * (testgrads[alpha] @ self.velocity) * phis[beta]
-                        Kdata[index] = quadWeight * (testgrads[alpha] @ (self.diffusivity @ gradphis[beta]))
+                        Adata[index] = quadWeight * (testgrad @ self.velocity) * phis[beta]
+                        Kdata[index] = quadWeight * (testgrad @ (self.diffusivity @ gradphis[beta]))
                         row_ind[index] = i
                         col_ind[index] = j
                         index += 1
@@ -522,7 +523,6 @@ class FciFemSim:
         """
         NX = self.NX
         NY = self.NY
-        nNodes = self.nNodes
         nPointsPerPlane = nx*(NY*ny + 1)
         nPointsTotal = nPointsPerPlane*NX + NY*ny + 1
         self.phiPlot = np.empty((nPointsTotal, 4))
