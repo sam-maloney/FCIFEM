@@ -73,31 +73,28 @@ f = TestProblem()
 
 dfRatio = f.dfdyMax / f.dfdxMax
 
-# class QaudraticBoundaryFunction:
-#     def __init__(self, A):
-#         self.A = A
-#         self.invA = 1/A
+class QaudraticBoundaryFunction:
+    def __init__(self, A):
+        self.A = A
+        self.invA = 1/A
     
-#     def __call__(self, p):
-#         x = p.reshape(-1,2)[:,0]
-#         y = p.reshape(-1,2)[:,1]
-#         zetaBottom = np.sqrt(x**2 - self.invA*y)
-#         zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
-#         return zetaBottom, zetaTop
+    def __call__(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        zetaBottom = np.sqrt(x**2 - self.invA*y)
+        zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
+        return zetaBottom, zetaTop
     
-#     def deriv(self, p, boundary):
-#         x = p.reshape(-1,2)[:,0]
-#         y = p.reshape(-1,2)[:,1]
-#         if boundary == 'bottom':
-#             dBdx = x / np.sqrt(x**2 - self.invA*y)
-#             dBdy = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
-#         elif boundary == 'top':
-#             dBdx = x / np.sqrt(x**2 + self.invA*(1 - y))
-#             dBdy = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
-#         return dBdx, dBdy
-    
-# B = QaudraticBoundaryFunction(f.A)
-# mapping = fcifem.mappings.QuadraticMapping(f.A)
+    def deriv(self, p, boundary):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        if boundary == 'bottom':
+            dBdx = x / np.sqrt(x**2 - self.invA*y)
+            dBdy = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
+        elif boundary == 'top':
+            dBdx = x / np.sqrt(x**2 + self.invA*(1 - y))
+            dBdy = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
+        return dBdx, dBdy
 
 class LinearBoundaryFunction:
     def __init__(self, slope):
@@ -111,27 +108,27 @@ class LinearBoundaryFunction:
         return zetaBottom, zetaTop
     
     def deriv(self, p, boundary):
-        if boundary == 'bottom':
-            dBdx = 1.
-            dBdy = -1./self.slope
-        elif boundary == 'top':
-            dBdx = 1.
-            dBdy = -1./self.slope
-        return dBdx, dBdy
+        return (1., -1./self.slope)
 
-mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
-B = LinearBoundaryFunction(mapping.slope)
-
-# class StraightBoundaryFunction:
-#     def __call__(self, p):
-#         nPoints = int(p.size / 2)
-#         return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
+class StraightBoundaryFunction:
+    def __call__(self, p):
+        nPoints = int(p.size / 2)
+        return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
+    
+    def deriv(self, p, boundary):
+        # this should never be used, just return dummy values
+        return (1., 1.)
 
 # B = StraightBoundaryFunction()
-# mapping = fcifem.mappings.StraightMapping()
+# mapping = fcifem.mappings.StraightMapping()\
+
+# mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
+# B = LinearBoundaryFunction(mapping.slope)
+
+B = QaudraticBoundaryFunction(f.A)
+mapping = fcifem.mappings.QuadraticMapping(f.A)
 
 # mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
-# mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
 
 kwargs={
     'mapping' : mapping,
@@ -144,7 +141,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 8
+stop = 3
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -160,8 +157,8 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    NY = NX
-    # NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
+    # NY = NX
+    NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
     NDX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
 
     # allocate arrays and compute grid
@@ -170,14 +167,17 @@ for iN, NX in enumerate(NX_array):
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
     BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=NDX)
     sim.setInitialConditions(np.zeros(BC.nNodes), mapped=False, BC=BC)
+    
+    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
         
     # Assemble the mass matrix and forcing term
     # if NDX == 1:
     #     Qord = 2
     # else:
     #     Qord = 1
-    Qord = 5
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
+    Qord = 1
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
+    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
     sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord,
                                      quadType='g', massLumping=False)
     
@@ -187,7 +187,6 @@ for iN, NX in enumerate(NX_array):
         pass
     
     t_setup[iN] = default_timer()-start_time
-    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
     print(f'setup time = {t_setup[iN]} s')
     start_time = default_timer()
     
@@ -207,13 +206,15 @@ for iN, NX in enumerate(NX_array):
     E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nNodes)
     
     print(f'max error = {E_inf[iN]}')
-    print(f'L2 error  = {E_2[iN]}\n')
+    print(f'L2 error  = {E_2[iN]}')
+    # print(f'cond(K) = {np.linalg.cond(sim.K.A)}')
+    print('')
 
 #%% Plotting
 
 # clear the current figure, if opened, and set parameters
 # fig = plt.gcf()
-fig = plt.figure(4)
+fig = plt.figure()
 fig.clf()
 fig.set_size_inches(7.75,3)
 plt.subplots_adjust(hspace = 0.3, wspace = 0.3)

@@ -11,7 +11,8 @@ import matplotlib.pyplot as plt
 import scipy.sparse as sp
 import scipy.sparse.linalg as sp_la
 
-import fcifem
+# import fcifem
+import fcifem_periodic as fcifem
 
 from timeit import default_timer
 
@@ -62,7 +63,7 @@ kwargs={
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 1
+start = 3
 stop = 3
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
@@ -83,8 +84,9 @@ for iN, NX in enumerate(NX_array):
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    ##### These require the fcifem_periodic version of the module #####
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    ##### These require the fcifem_periodic version of the module #####
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
@@ -182,6 +184,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
+# sim.generatePlottingPoints(nx=5, ny=5)
 sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 sim.computePlottingSolution()
 
@@ -203,7 +206,10 @@ ax1 = plt.subplot(121)
 field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.4, 0.5, 0.6]:
-    ax1.plot(x, [sim.BC.mapping(np.array([[0, yi]]), i) for i in x], 'k')
+    try:
+        ax1.plot(x, [sim.BC.mapping(np.array([[0, yi]]), i) for i in x], 'k')
+    except:
+        ax1.plot(x, [sim.mapping(np.array([[0, yi]]), i) % 1 for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')
 # ax.plot(sim.X[np.argmax(sim.U)], sim.Y[np.argmax(sim.U)],

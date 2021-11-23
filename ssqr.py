@@ -122,13 +122,25 @@ class QRfactorization:
         self.free()
 
 
+def free(A):
+    try:
+        cppyy.gbl.cholmod_l_free_sparse(A, cc)
+    except:
+        pass
+    try:
+        cppyy.gbl.cholmod_l_free_dense(A, cc)
+    except:
+        pass
+    return
+
 def scipyCscToCholmodSparse(A):
     if not isinstance(A, csc_matrix):
         raise TypeError("Input matrix must be of type scipy.sparse.csc_matrix")
     if A.indptr.dtype != 'int64':
         raise TypeError("Input matrix must have indices of type int64")
     nrow, ncol = A.shape
-    return cppyy.gbl.cholmod_sparse(int(nrow), # the matrix is nrow-by-ncol
+    return cppyy.gbl.cholmod_sparse(
+        int(nrow), # the matrix is nrow-by-ncol
         int(ncol),
         A.nnz, # nzmax; maximum number of entries in the matrix
         # pointers to int or SuiteSparse_long (int64):
@@ -144,7 +156,7 @@ def scipyCscToCholmodSparse(A):
         CHOLMOD_DOUBLE, # dtype; x and z are double or float
         A.has_sorted_indices, # sorted; TRUE if columns are sorted, FALSE otherwise
         True # packed; TRUE if packed (nz ignored), FALSE if unpacked (nz is required)
-    )
+        )
 
 def cholmodSparseToScipyCsc(chol_A):
     A = csc_matrix((np.iinfo('int32').max + 1, 1)) # forces idx_type = 'int64'
@@ -211,7 +223,7 @@ def QR_C(chol_A, tol=SPQR_DEFAULT_TOL, econ=None):
         HTau, # **HTau; size nh, Householder coefficients
         # workspace and parameters
         cc
-    )
+        )
     QR = QRfactorization(Zs, Zd, R, E, H, HPinv, HTau)
     return QR, r
 
@@ -225,7 +237,7 @@ def qmult(QR, x, method=SPQR_QX):
         cppyy.nullptr, # *z; size nzmax, if present (zomplex)
         CHOLMOD_REAL, # xtype; pattern, real, complex, or zomplex
         CHOLMOD_DOUBLE # dtype; x and z double or float
-    )
+        )
     chol_Qx = cppyy.gbl.SuiteSparseQR_qmult['double'](
         # inputs, no modified
         method, # method; 0,1,2,3
@@ -235,7 +247,7 @@ def qmult(QR, x, method=SPQR_QX):
         chol_x, # *Xdense; size m-by-n
         # workspace and parameters
         cc
-    )
+        )
     return np.frombuffer(chol_Qx.x, dtype=np.float64, count=chol_Qx.nzmax)
 
 # chol_Q = cppyy.bind_object(cppyy.nullptr, 'cholmod_sparse')
@@ -252,6 +264,6 @@ def qmult(QR, x, method=SPQR_QX):
 #     chol_R, # **R, e-by-n sparse matrix
 #     chol_E, # **E, size n column perm, NULL if identity
 #     cc # workspace and parameters
-# )
+#     )
 # cppyy.gbl.cholmod_l_free_sparse(chol_Q, cc)
 # cppyy.gbl.cholmod_l_free_sparse(chol_R, cc)

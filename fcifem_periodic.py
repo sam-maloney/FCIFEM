@@ -14,6 +14,8 @@ import numpy as np
 import ssqr
 
 import integrators
+import mappings
+import boundaries
 
 
 class FciFemSim:
@@ -160,7 +162,7 @@ class FciFemSim:
             self.nodes = np.vstack( (np.repeat(self.nodeX[:-1], self.NY),
                                 self.nodeY[:-1,:-1].ravel()) ).T
             self.nodesMapped = self.nodes.copy()
-            self.nodesMapped[:,1] = self.mapping(self.nodes, 0)
+            self.nodesMapped[:,1] = self.mapping(self.nodes, 0) % 1
             if mapped:
                 self.u = u0(self.nodesMapped)
             else:
@@ -404,8 +406,8 @@ class FciFemSim:
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX)
-            mapR = self.mapping(quads, self.nodeX[iPlane+1])
+            mapL = self.mapping(quads, nodeX) % 1
+            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -562,8 +564,8 @@ class FciFemSim:
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX)
-            mapR = self.mapping(quads, nodeX1)
+            mapL = self.mapping(quads, nodeX) % 1
+            mapR = self.mapping(quads, nodeX1) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -731,8 +733,8 @@ class FciFemSim:
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX)
-            mapR = self.mapping(quads, self.nodeX[iPlane+1])
+            mapL = self.mapping(quads, nodeX) % 1
+            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -996,8 +998,8 @@ class FciFemSim:
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX)
-            mapR = self.mapping(quads, self.nodeX[iPlane+1])
+            mapL = self.mapping(quads, nodeX) % 1
+            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -1177,8 +1179,8 @@ class FciFemSim:
                     [quadWeights * weight for weight in weights[i]] )
             phiX = quads[:,0] / dx
             quads += [nodeX, 0]
-            mapL = self.mapping(quads, nodeX)
-            mapR = self.mapping(quads, self.nodeX[iPlane+1])
+            mapL = self.mapping(quads, nodeX) % 1
+            mapR = self.mapping(quads, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
@@ -1360,8 +1362,8 @@ class FciFemSim:
             self.X = np.append(self.X, points[:,0] + nodeX)
             phiX = points[:,0] / dx
             points += [nodeX, 0]
-            mapL = self.mapping(points, nodeX)
-            mapR = self.mapping(points, self.nodeX[iPlane+1])
+            mapL = self.mapping(points, nodeX) % 1
+            mapR = self.mapping(points, self.nodeX[iPlane+1]) % 1
             indL = (np.searchsorted(self.nodeY[iPlane], mapL, side='right') - 1) % NY
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]

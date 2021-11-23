@@ -46,7 +46,7 @@ class PeriodicBoundary(Boundary):
     def __call__(self, p, iPlane):
         originalShape = p.shape
         p.shape = (2,)
-        nNodes = self.nNodeslinear
+        nNodes = self.nNodes
         NY = self.sim.NY
         nodeX = self.sim.nodeX[iPlane]
         nodeXp1 = self.sim.nodeX[iPlane + 1]
