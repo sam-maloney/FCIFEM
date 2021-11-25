@@ -2,7 +2,8 @@
 """
 Created on Mon Jun  8 13:47:07 2020
 
-@author: samal
+@author: Samuel A. Maloney
+
 """
 
 import numpy as np
@@ -11,8 +12,8 @@ import matplotlib.pyplot as plt
 import scipy.sparse as sp
 import scipy.sparse.linalg as sp_la
 
-# import fcifem
-import fcifem_periodic as fcifem
+import fcifem
+# import fcifem_periodic as fcifem
 
 from timeit import default_timer
 
@@ -63,7 +64,7 @@ kwargs={
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 3
+start = 1
 stop = 3
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
@@ -85,7 +86,7 @@ for iN, NX in enumerate(NX_array):
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
     ##### These require the fcifem_periodic version of the module #####
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
@@ -94,7 +95,7 @@ for iN, NX in enumerate(NX_array):
     
     sim.setInitialConditions(f)
     
-    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
+    print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
     
     # Assemble the mass matrix and forcing term
     sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
@@ -107,7 +108,7 @@ for iN, NX in enumerate(NX_array):
     
     # sim.K.data[0] = 1.
     # sim.K.data[1:sim.K.indptr[1]] = 0.
-    # sim.b[0] = uExactFunc(sim.nodes[0])
+    # sim.b[0] = uExactFunc(sim.DoFs[0])
 
     ##### Enforce exact solution constraints directly #####
     
@@ -134,13 +135,13 @@ for iN, NX in enumerate(NX_array):
     n = int(NX*NY/2 + NY/2)
     sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
     sim.K[n,n] = 1.
-    sim.b[n] = uExactFunc(sim.nodes[n])
+    sim.b[n] = uExactFunc(sim.DoFs[n])
     
-    for n, node in enumerate(sim.nodes):
+    for n, node in enumerate(sim.DoFs):
         if node.prod() == 0.:
             sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
             sim.K[n,n] = 1.
-            sim.b[n] = uExactFunc(sim.nodes[n])
+            sim.b[n] = uExactFunc(sim.DoFs[n])
     
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]} s')
@@ -150,17 +151,17 @@ for iN, NX in enumerate(NX_array):
     # u = sp_la.spsolve(sim.K, sim.b)
     tolerance = 1e-10
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=tolerance, atol=tolerance)
-    # sim.u = u[0:sim.nNodes]
+    # sim.u = u[0:sim.nDoFs]
     
     t_solve[iN] = default_timer()-start_time
     print(f'solve time = {t_solve[iN]} s')
     start_time = default_timer()
     
     # compute the analytic solution and error norms
-    uExact = uExactFunc(sim.nodes)
+    uExact = uExactFunc(sim.DoFs)
     
     E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf)
-    E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nNodes)
+    E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs)
     
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}\n')
@@ -201,7 +202,7 @@ vmax = maxAbsErr
 ax1 = plt.subplot(121)
 # field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
 #                      ,cmap='seismic', vmin=vmin, vmax=vmax)
-# field = ax1.tripcolor(sim.nodes[:,0], sim.nodes[:,1], sim.u - uExact
+# field = ax1.tripcolor(sim.DoFs[:,0], sim.DoFs[:,1], sim.u - uExact
 #                     ,shading='gouraud', cmap='seismic', vmin=vmin, vmax=vmax)
 field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)

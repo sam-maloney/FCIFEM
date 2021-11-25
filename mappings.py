@@ -3,7 +3,8 @@
 """
 Created on Mon Nov 15 15:33:58 2021
 
-@author: phrhpf
+@author: Samuel A. Maloney
+
 """
 
 import numpy as np

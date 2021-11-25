@@ -2,7 +2,8 @@
 """
 Created on Fri Jul  9 15:35:11 2021
 
-@author: samal
+@author: Samuel A. Maloney
+
 """
 
 import numpy as np

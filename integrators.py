@@ -2,7 +2,8 @@
 """
 Created on Tue Apr 13 09:20:59 2021
 
-@author: samal
+@author: Samuel A. Maloney
+
 """
 import numpy as np
 import scipy.linalg as la

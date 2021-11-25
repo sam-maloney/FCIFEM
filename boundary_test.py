@@ -2,7 +2,8 @@
 """
 Created on Mon Jun  8 13:47:07 2020
 
-@author: samal
+@author: Samuel A. Maloney
+
 """
 
 import numpy as np
@@ -141,7 +142,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 3
+stop = 1
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -166,9 +167,9 @@ for iN, NX in enumerate(NX_array):
     
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
     BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=NDX)
-    sim.setInitialConditions(np.zeros(BC.nNodes), mapped=False, BC=BC)
+    sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
     
-    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
+    print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
         
     # Assemble the mass matrix and forcing term
     # if NDX == 1:
@@ -200,10 +201,10 @@ for iN, NX in enumerate(NX_array):
     start_time = default_timer()
     
     # compute the analytic solution and error norms
-    uExact = f.solution(sim.nodes)
+    uExact = f.solution(sim.DoFs)
     
     E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf)
-    E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nNodes)
+    E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs)
     
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}')
