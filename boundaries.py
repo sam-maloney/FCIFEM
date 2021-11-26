@@ -119,6 +119,7 @@ class DirichletBoundary(Boundary):
         self.B = B
         # gradphis[ind, x=0/y=1, dphi=0/drho=1]
         self.gradphis = np.empty((4,2,2))
+# TODO autogenerate top/bottom boundary nodes from nodeX/nodeY
         self.DirichletNodeX = np.tile(np.vstack(
             [np.linspace(nodeX[i], nodeX[i+1], NDX+1) for i in range(NX)]),
             (2,1)).reshape(2,-1,NDX+1)
@@ -213,6 +214,10 @@ class DirichletBoundary(Boundary):
                 g1 = self.g(np.array((zeta1, float(isBoundaryTop))))
                 phis[1] *= g1
                 self.gradphis[1,:,0] *= g1
+                # if not np.allclose(np.array((zeta0, float(isBoundaryTop))), self.sim.nodes[i0]):
+                #     print(f'p0 = ({zeta0}, {float(isBoundaryTop)}),\t node = {self.sim.nodes[i0]})')
+                # if not np.allclose(np.array((zeta1, float(isBoundaryTop))), self.sim.nodes[i1]):
+                #     print(f'p1 = ({zeta1}, {float(isBoundaryTop)}),\t node = {self.sim.nodes[i1]})')
             
             if isBoundaryBottom and (zetaBottom > p[0]):
                 zetaPlus = zetaBottom
@@ -251,6 +256,10 @@ class DirichletBoundary(Boundary):
                 g3 = self.g(np.array((zeta3, float(isBoundaryTop))))
                 phis[3] *= g3
                 self.gradphis[3,:,0] *= g3
+                # if not np.allclose(np.array((zeta2, float(isBoundaryTop))), self.sim.nodes[i2]):
+                #     print(f'p2 = ({zeta2}, {float(isBoundaryTop)}),\t node = {self.sim.nodes[i2]})')
+                # if not np.allclose(np.array((zeta3, float(isBoundaryTop))), self.sim.nodes[i3]):
+                #     print(f'p3 = ({zeta3}, {float(isBoundaryTop)}),\t node = {self.sim.nodes[i3]})')
             
         if not isBoundaryMinus:
             zetaMinus = nodeX
@@ -258,6 +267,8 @@ class DirichletBoundary(Boundary):
             i1 = np.searchsorted(nodeY, mapL, side='right') - 1
             if i1 > nYnodes: # for points right at top boundary nodes
                 i1 -= 1
+            if i1 < 0:
+                i1 = 0
             i0 = i1 - 1
             phis[1] = (mapL - nodeY[i1]) * self.sim.idy[iPlane][i1]
             phis[0] = 1 - phis[1]
@@ -273,10 +284,13 @@ class DirichletBoundary(Boundary):
                     i0 = -2*nYnodes - iPlane*NDX - 1
                 elif iPlane == 0:
                     i0 = -i0 - 1
+                # if not np.allclose(np.array((nodeX, nodeY[i1])), self.sim.nodes[i0]):
+                #     print(f'p0 = ({nodeX}, {nodeY[i1]}),\t node = {self.sim.nodes[i0]})')
             else: # i0 is interior
                 i0 += (iPlane - 1)*nYnodes
             ##### if i1 on the left or top boundary #####
             if (iPlane == 0) or (i1 >= nYnodes):
+                # p1 = np.array((nodeX, nodeY[i1+1]))
                 g1 = self.g(np.array((nodeX, nodeY[i1+1])))
                 phis[1] *= g1
                 self.gradphis[1,:,0] *= g1
@@ -284,6 +298,8 @@ class DirichletBoundary(Boundary):
                     i1 = -2*nYnodes - (NX + iPlane)*NDX - 2
                 elif iPlane == 0:
                     i1 = -i1 - 1
+                # if not np.allclose(p1, self.sim.nodes[i1]):
+                #     print(f'p1 = ({p1[0]}, {p1[1]}),\t node = {self.sim.nodes[i1]})')
             else: # i1 is interior
                 i1 += (iPlane - 1)*nYnodes
         if not isBoundaryPlus:
@@ -292,6 +308,8 @@ class DirichletBoundary(Boundary):
             i3 = np.searchsorted(nodeYp1, mapR, side='right') - 1
             if i3 > nYnodes: # for points right at top boundary nodes
                 i3 -= 1
+            if i3 < 0:
+                i3 = 0
             i2 = i3 - 1
             phis[3] = (mapR - nodeYp1[i3]) * self.sim.idy[iPlane+1][i3]
             phis[2] = 1 - phis[3]
@@ -307,10 +325,13 @@ class DirichletBoundary(Boundary):
                     i2 = -2*nYnodes - (iPlane+1)*NDX - 1
                 elif iPlane == nXnodes:
                     i2 = -i2 - nYnodes - 1
+                # if not np.allclose(np.array((nodeXp1, nodeYp1[i3])), self.sim.nodes[i2]):
+                #     print(f'p2 = ({nodeXp1}, {nodeYp1[i3]}),\t node = {self.sim.nodes[i2]})')
             else:
                 i2 += iPlane*nYnodes
             ##### if i3 on the right or top boundary #####
             if (iPlane == nXnodes) or (i3 >= nYnodes):
+                # p3 = np.array((nodeXp1, nodeYp1[i3+1]))
                 g3 = self.g(np.array((nodeXp1, nodeYp1[i3+1])))
                 phis[3] *= g3
                 self.gradphis[3,:,0] *= g3
@@ -318,6 +339,8 @@ class DirichletBoundary(Boundary):
                     i3 = -2*nYnodes - (NX + iPlane + 1)*NDX - 2
                 elif iPlane == nXnodes:
                     i3 = -i3 - nYnodes - 1
+                # if not np.allclose(p3, self.sim.nodes[i3]):
+                #     print(f'p3 = ({p3[0]}, {p3[1]}),\t node = {self.sim.nodes[i3]})')
             else:
                 i3 += iPlane*nYnodes
         rho = (p[0] - zetaMinus) / (zetaPlus - zetaMinus)

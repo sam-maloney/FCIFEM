@@ -186,7 +186,7 @@ class FciFemSim:
                 f"({self.nDoFs}, {self.ndim}).")
     
     def computeSpatialDiscretization(self, f=None, NQX=1, NQY=None, Qord=2,
-                                      quadType='gauss', massLumping=False):
+            quadType='gauss', massLumping=False, **kwargs):
         """Assemble the system discretization matrices K, A, M in CSR format.
         
         K is the stiffness matrix from the diffusion term
@@ -306,8 +306,8 @@ class FciFemSim:
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
     
-    def computeSpatialDiscretizationLinearVCI(self, f=None, NQX=1, NQY=None, Qord=2,
-                                          quadType='gauss', massLumping=False):
+    def computeSpatialDiscretizationLinearVCI(self, f=None, NQX=1, NQY=None,
+            Qord=2, quadType='gauss', massLumping=False, **kwargs):
         """Assemble the system discretization matrices K, A, M in CSR format.
         Implements linear variationally consistent integration using assumed
         strain method of Chen2013 https://doi.org/10.1002/nme.4512
@@ -447,7 +447,8 @@ class FciFemSim:
                                 shape=(nDoFs, nDoFs) )
     
     def computeSpatialDiscretizationConservativeLinearVCI(self, f=None, NQX=1,
-            NQY=None, Qord=2, quadType='gauss', massLumping=False):
+            NQY=None, Qord=2, quadType='gauss', massLumping=False,
+            includeBoundaries=False, **kwargs):
         """Assemble the system discretization matrices K, A, M in CSR format.
         Implements linear variationally consistent integration by re-weighting
         the quadrature points.
@@ -517,6 +518,11 @@ class FciFemSim:
         
         self.rOld = np.zeros((nNodes, self.ndim, 3))
         
+        if includeBoundaries:
+            indexOffset = nNodes
+        else:
+            indexOffset = nDoFs
+        
         ##### compute spatial discretizaton
         index = 0
         for iPlane in range(NX):
@@ -552,58 +558,81 @@ class FciFemSim:
                     self.rOld[i,1,2] -= phis[alpha] * quadWeight
                     self.rOld[i,:,1:3] -= np.outer(gradphis[alpha], disp) * quadWeight
                     if i < 0:
-                        continue # move to next i if boundary node
+                        if includeBoundaries:
+                            i += nNodes
+                        else:
+                            continue # move to next i if boundary node
                     gd[index:index+2] = gradphis[alpha]
-                    ri[index:index+2] = (i, i+nDoFs)
+                    ri[index:index+2] = (i, i + indexOffset)
                     ci[index:index+2] = iQ + iPlane*nQuads
                     index += 2
         
         gd[index:index + nQuads*NX] = 1.0
-        ri[index:index + nQuads*NX] = 2*nDoFs
+        if includeBoundaries:
+            ri[index:index + nQuads*NX] = 2*nNodes
+        else:
+            ri[index:index + nQuads*NX] = 2*nDoFs
         ci[index:index + nQuads*NX] = np.arange(nQuads * NX)
         index += nQuads * NX
-        
-        if self.BC.name == 'Dirichlet':
+                
+        if (self.BC.name == 'Dirichlet') and includeBoundaries:
+            self.boundaryIntegrals = np.zeros((self.BC.nDirichletNodes, 2))
             nYnodes = self.BC.nYnodes
             NDX = self.BC.NDX
             g = self.BC.g
             # left boundary
-            self.rOld[-nYnodes:,0,0] -= g(self.nodes[-nYnodes:]) \
+            # self.rOld[-nYnodes:,0,0]
+            self.boundaryIntegrals[-nYnodes:,0] = -g(self.nodes[-nYnodes:]) \
                 * 0.5 * np.flip(self.nodeY[0,2:] - self.nodeY[0,:-2])
             # right boundary
-            self.rOld[-2*nYnodes:-nYnodes,0,0] += g(self.nodes[-2*nYnodes:-nYnodes]) \
-                * 0.5 * np.flip(self.nodeY[1,2:] - self.nodeY[1,:-2])
+            # self.rOld[-2*nYnodes:-nYnodes,0,0]
+            self.boundaryIntegrals[-2*nYnodes:-nYnodes,0] = \
+                g(self.nodes[-2*nYnodes:-nYnodes]) \
+              * 0.5 * np.flip(self.nodeY[1,2:] - self.nodeY[1,:-2])
             # bottom boundary
-            self.rOld[-2*nYnodes - NX*NDX:-2*nYnodes - 1,1,0] -= \
-                g(self.nodes[-2*nYnodes - NX*NDX:-2*nYnodes - 1]) \
-                * 0.5*(self.nodes[-2*nYnodes - NX*NDX - 1:-2*nYnodes-2,0] - 
-                       self.nodes[-2*nYnodes - NX*NDX + 1:-2*nYnodes,0])
+            # self.rOld[-2*nYnodes - NX*NDX:-2*nYnodes - 1,1,0]
+            self.boundaryIntegrals[-2*nYnodes - NX*NDX:-2*nYnodes - 1,1] = \
+                -g(self.nodes[-2*nYnodes - NX*NDX:-2*nYnodes - 1]) \
+               * 0.5 * ( self.nodes[-2*nYnodes - NX*NDX - 1:-2*nYnodes-2,0]
+                      - self.nodes[-2*nYnodes - NX*NDX + 1:-2*nYnodes,0] )
             # top boundary
-            self.rOld[nDoFs+1:-2*nYnodes - NX*NDX - 2,1,0] += \
+            # self.rOld[nDoFs+1:-2*nYnodes - NX*NDX - 2,1,0]
+            self.boundaryIntegrals[1:-2*nYnodes - NX*NDX - 2,1] = \
                 g(self.nodes[nDoFs+1:-2*nYnodes - NX*NDX - 2]) \
-                * 0.5*(self.nodes[nDoFs:-2*nYnodes - NX*NDX - 3,0] -
-                       self.nodes[nDoFs+2:-2*nYnodes - NX*NDX - 1,0])
+              * 0.5 * ( self.nodes[nDoFs:-2*nYnodes - NX*NDX - 3,0]
+                      - self.nodes[nDoFs+2:-2*nYnodes - NX*NDX - 1,0] )
             # [0., 0.]
-            self.rOld[-2*nYnodes - 1,:,0] -= g(self.nodes[-2*nYnodes - 1]) \
-                * 0.5*[1/self.idy[0][0], self.nodes[-2*nYnodes-2,0]]
+            # self.rOld[-2*nYnodes - 1,:,0]
+            self.boundaryIntegrals[-2*nYnodes - 1] = \
+                -g(self.nodes[-2*nYnodes - 1]) \
+               * 0.5*(1/self.idy[0][0], self.nodes[-2*nYnodes-2,0])
             # [6.28318531, 0.        ]
-            self.rOld[nDoFs + NX*NDX + 1,:,0] += g(self.nodes[nDoFs + NX*NDX + 1]) \
-                * 0.5*[1/self.idy[-1][0], self.nodes[nDoFs + NX*NDX + 2,0] - 2*np.pi]
-            ##### TODO
+            # self.rOld[nDoFs + NX*NDX + 1,:,0]
+            self.boundaryIntegrals[NX*NDX + 1] = \
+                g(self.nodes[nDoFs + NX*NDX + 1]) \
+              * 0.5*(1/self.idy[-1][0], self.nodes[nDoFs + NX*NDX + 2,0] - 2*np.pi)
             # [0., 1.]
-            g(self.nodes[nDoFs + NX*NDX])
+            # self.rOld[nDoFs + NX*NDX,:,0]
+            self.boundaryIntegrals[NX*NDX] = \
+                g(self.nodes[nDoFs + NX*NDX]) \
+              * 0.5*(-1/self.idy[0][-1], self.nodes[nDoFs + NX*NDX-1,0])
             # [6.28318531, 1.        ]
-            g(self.nodes[nDoFs])
-            
-        
-        self.gradphiSums = self.rOld[:nDoFs,:,0]
+            # self.rOld[nDoFs,:,0]
+            self.boundaryIntegrals[0] = g(self.nodes[nDoFs]) \
+                * 0.5*(1/self.idy[-1][-1], 2*np.pi - self.nodes[nDoFs + 1,0])
+            self.rOld[nDoFs:,:,0] += self.boundaryIntegrals
+            self.gradphiSums = self.rOld[:,:,0]
+            nConstraints = 2*nNodes + 1
+        else:
+            self.gradphiSums = self.rOld[:nDoFs,:,0]
+            nConstraints = 2*nDoFs + 1
         
         ##### Using SuiteSparse QR decomposition #####
         # Form the transpose of G (i.e. ri and ci intentionally swapped)
         # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
         self.G = sp.csc_matrix((gd[:index], (ci[:index], ri[:index])),
-                      shape=(np.iinfo('int32').max + 1, 2*nDoFs + 1))
-        self.G._shape = (nQuads * NX, 2*nDoFs + 1)
+                      shape=(np.iinfo('int32').max + 1, nConstraints))
+        self.G._shape = (nQuads * NX, nConstraints)
         del gd, ci, ri, offsets, weights, quads, quadWeights
         start_time = default_timer()
         QR, r = ssqr.QR_C(self.G)
@@ -612,9 +641,9 @@ class FciFemSim:
         try:
             QR.E[0][0]
             E = np.frombuffer(QR.E[0], dtype=np.int64, count=r)
-            rhs = np.concatenate((self.gradphiSums.T.ravel(), np.zeros(1)))[E]
+            rhs = np.append(self.gradphiSums.T.ravel(), 0.)[E]
         except:
-            rhs = np.concatenate((self.gradphiSums.T.ravel(), np.zeros(1)))[:r]
+            rhs = np.append(self.gradphiSums.T.ravel(), 0.)[:r]
         R = ssqr.cholmodSparseToScipyCsc(QR.R)
         x = np.empty(nQuads * NX)
         x[:r] = sp_la.spsolve_triangular(R.T[:r,:r], rhs, lower=True,
@@ -625,8 +654,8 @@ class FciFemSim:
 
         # ##### Using scipy.sparse.linalg, much slower, uses less memory #####
         # self.G = sp.csr_matrix((gd[:index], (ri[:index], ci[:index])),
-        #                         shape=(2*nDoFs+1, nQuads * NX))
-        # rhs = np.concatenate((self.gradphiSums.T.ravel(), np.zeros(1)))
+        #                         shape=(nConstraints, nQuads * NX))
+        # rhs = np.append(self.gradphiSums.T.ravel(), 0.)
         # v0 = np.zeros(nQuads * NX)
         # maxit = nQuads * NX
         # # tol = np.finfo(float).eps
@@ -673,7 +702,11 @@ class FciFemSim:
                         col_ind[index] = j
                         index += 1
         
-        self.gradphiSumsNew = self.rNew[:nDoFs,:,0]
+        if includeBoundaries:
+            self.rNew[nDoFs:,:,0] += self.boundaryIntegrals
+            self.gradphiSumsNew = self.rNew[:,:,0]
+        else:
+            self.gradphiSumsNew = self.rNew[:nDoFs,:,0]
         
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )

@@ -26,12 +26,18 @@ from timeit import default_timer
 #     def solution(self, p):
 #         return (1 / (1 + 4*np.pi**2)) * self(p)
 
-# class TestProblem:
-#     def __call__(self, p):
-#         return np.ones(int(p.size / 2))
+class TestProblem:
+    A = 0.02
+    dfdyMax = 1
+    dfdxMax = 1
     
-#     def solution(self, p):
-#         return np.ones(int(p.size / 2))
+    def __call__(self, p):
+        return np.ones(int(p.size / 2))
+    
+    def solution(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        return ((x == np.pi) & (y == 0.)).astype('float')
 
 # function for quadratic patch test
 class linearPatch():
@@ -49,7 +55,7 @@ class linearPatch():
         return x + 2*y
 
 
-class TestProblem:
+class QuadraticTestProblem:
     n = 20
     A = 0.02
     
@@ -69,7 +75,7 @@ class TestProblem:
         y = p.reshape(-1,2)[:,1]
         return x*np.sin(self.n*(y - self.A*x**2))
         
-f = TestProblem()
+f = QuadraticTestProblem()
 # f = linearPatch()
 
 dfRatio = f.dfdyMax / f.dfdxMax
@@ -136,8 +142,8 @@ kwargs={
     'dt' : 1.,
     'velocity' : np.array([0., 0.]), # Makes the advection matrix zero
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.1,
-    'py' : 0.1,
+    'px' : 0.,
+    'py' : 0.,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
@@ -158,9 +164,11 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
+    # NY = 20
     # NY = NX
     NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
     NDX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
+    NDX = 32
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
@@ -178,9 +186,9 @@ for iN, NX in enumerate(NX_array):
     #     Qord = 1
     Qord = 1
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
-    sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord,
-                                     quadType='g', massLumping=False)
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord, 
+        quadType='g', massLumping=False, includeBoundaries=True)
     
     try:
         dxi.append(sim.xi[1:])
@@ -231,8 +239,8 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-# sim.generatePlottingPoints(nx=1, ny=1)
 sim.generatePlottingPoints(nx=1, ny=1)
+# sim.generatePlottingPoints(nx=100, ny=100)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=int(NY/NX))
 sim.computePlottingSolution()
@@ -240,8 +248,8 @@ sim.computePlottingSolution()
 # vmin = np.min(sim.U)
 # vmax = np.max(sim.U)
 
-exactSol = sim.f.solution(np.vstack((sim.X,sim.Y)).T)
-F = sim.f(np.vstack((sim.X,sim.Y)).T)
+exactSol = f.solution(np.vstack((sim.X,sim.Y)).T)
+F = f(np.vstack((sim.X,sim.Y)).T)
 error = sim.U - exactSol
 maxAbsErr = np.max(np.abs(error))
 # maxAbsErr = np.max(np.abs(sim.u - uExact))
@@ -249,10 +257,10 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-                      ,cmap='seismic', vmin=vmin, vmax=vmax)
+# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+#                       ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.X, sim.Y, F, shading='gouraud')
-# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 # for yi in [0.0, 0.1, 0.2]:
 for yi in [0.0]:
