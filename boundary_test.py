@@ -37,7 +37,7 @@ class TestProblem:
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return ((x == np.pi) & (y == 0.)).astype('float')
+        return ((abs(x - np.pi) < 1e-10) & (abs(y) < 1e-10)).astype('float')
 
 # function for quadratic patch test
 class linearPatch():
@@ -142,13 +142,13 @@ kwargs={
     'dt' : 1.,
     'velocity' : np.array([0., 0.]), # Makes the advection matrix zero
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.,
-    'py' : 0.,
+    'px' : 0.1,
+    'py' : 0.1,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 1
-stop = 1
+start = 5
+stop = 5
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -168,13 +168,13 @@ for iN, NX in enumerate(NX_array):
     # NY = NX
     NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
     NDX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
-    NDX = 32
+    # NDX = 32
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
-    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=NDX)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=None)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
     
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
@@ -184,7 +184,7 @@ for iN, NX in enumerate(NX_array):
     #     Qord = 2
     # else:
     #     Qord = 1
-    Qord = 1
+    Qord = 2
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
     sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord, 
@@ -240,7 +240,7 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 sim.generatePlottingPoints(nx=1, ny=1)
-# sim.generatePlottingPoints(nx=100, ny=100)
+# sim.generatePlottingPoints(nx=10, ny=1)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=int(NY/NX))
 sim.computePlottingSolution()
@@ -251,16 +251,16 @@ sim.computePlottingSolution()
 exactSol = f.solution(np.vstack((sim.X,sim.Y)).T)
 F = f(np.vstack((sim.X,sim.Y)).T)
 error = sim.U - exactSol
-maxAbsErr = np.max(np.abs(error))
-# maxAbsErr = np.max(np.abs(sim.u - uExact))
+maxAbsErr = np.max(abs(error))
+# maxAbsErr = np.max(abs(sim.u - uExact))
 vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-#                       ,cmap='seismic', vmin=vmin, vmax=vmax)
+field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+                      ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.X, sim.Y, F, shading='gouraud')
-field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 # for yi in [0.0, 0.1, 0.2]:
 for yi in [0.0]:

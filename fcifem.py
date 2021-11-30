@@ -277,7 +277,7 @@ class FciFemSim:
                         continue # move to next i if boundary node
                     for beta, j in enumerate(inds):
                         if j < 0: # j is boundary node
-                            ##### Not sure if this can always be uncommmented? #####
+                            ##### Not sure if this can/should always be uncommmented? #####
                             ##### Needed for projection; but does it affect Poisson/CD #####
                             # self.b[i] -= quadWeights[iQ] * (
                             #     phis[alpha] * phis[beta] )
@@ -420,7 +420,7 @@ class FciFemSim:
                     self.b[i] += quadWeight * fq * phis[alpha]
                 for beta, j in enumerate(inds):
                     if j < 0: # j is boundary node
-                        ##### Not sure if this can always be uncommmented? #####
+                        ##### Not sure if this can/should always be uncommmented? #####
                         ##### Needed for projection; but does it affect Poisson/CD #####
                         # self.b[i] -= quadWeight * (
                         #     phis[alpha] * phis[beta] )
@@ -578,48 +578,42 @@ class FciFemSim:
         if (self.BC.name == 'Dirichlet') and includeBoundaries:
             self.boundaryIntegrals = np.zeros((self.BC.nDirichletNodes, 2))
             nYnodes = self.BC.nYnodes
-            NDX = self.BC.NDX
+            DirichletNodeX = self.BC.DirichletNodeX
+            nBottomNodes = DirichletNodeX[0].size
+            nTopNodes = DirichletNodeX[1].size
             g = self.BC.g
             # left boundary
-            # self.rOld[-nYnodes:,0,0]
             self.boundaryIntegrals[-nYnodes:,0] = -g(self.nodes[-nYnodes:]) \
                 * 0.5 * np.flip(self.nodeY[0,2:] - self.nodeY[0,:-2])
             # right boundary
-            # self.rOld[-2*nYnodes:-nYnodes,0,0]
             self.boundaryIntegrals[-2*nYnodes:-nYnodes,0] = \
                 g(self.nodes[-2*nYnodes:-nYnodes]) \
-              * 0.5 * np.flip(self.nodeY[1,2:] - self.nodeY[1,:-2])
+              * 0.5 * np.flip(self.nodeY[-1,2:] - self.nodeY[-1,:-2])
             # bottom boundary
-            # self.rOld[-2*nYnodes - NX*NDX:-2*nYnodes - 1,1,0]
-            self.boundaryIntegrals[-2*nYnodes - NX*NDX:-2*nYnodes - 1,1] = \
-                -g(self.nodes[-2*nYnodes - NX*NDX:-2*nYnodes - 1]) \
-               * 0.5 * ( self.nodes[-2*nYnodes - NX*NDX - 1:-2*nYnodes-2,0]
-                      - self.nodes[-2*nYnodes - NX*NDX + 1:-2*nYnodes,0] )
+            self.boundaryIntegrals[nTopNodes + 1:-2*nYnodes - 1,1] \
+                = -g(self.nodes[nDoFs + nTopNodes + 1:-2*nYnodes - 1]) \
+                * 0.5 * ( DirichletNodeX[0][-1:1:-1]
+                        - DirichletNodeX[0][-3::-1] )
             # top boundary
-            # self.rOld[nDoFs+1:-2*nYnodes - NX*NDX - 2,1,0]
-            self.boundaryIntegrals[1:-2*nYnodes - NX*NDX - 2,1] = \
-                g(self.nodes[nDoFs+1:-2*nYnodes - NX*NDX - 2]) \
-              * 0.5 * ( self.nodes[nDoFs:-2*nYnodes - NX*NDX - 3,0]
-                      - self.nodes[nDoFs+2:-2*nYnodes - NX*NDX - 1,0] )
+            self.boundaryIntegrals[1:-2*nYnodes - nBottomNodes - 1,1] = \
+                g(self.nodes[nDoFs + 1:-2*nYnodes - nBottomNodes - 1]) \
+              * 0.5 * ( DirichletNodeX[1][-1:1:-1]
+                      - DirichletNodeX[1][-3::-1] )
             # [0., 0.]
-            # self.rOld[-2*nYnodes - 1,:,0]
             self.boundaryIntegrals[-2*nYnodes - 1] = \
-                -g(self.nodes[-2*nYnodes - 1]) \
-               * 0.5*(1/self.idy[0][0], self.nodes[-2*nYnodes-2,0])
+                -g(self.nodes[-2*nYnodes - 1]) * 0.5 * \
+                (1/self.idy[0][0], DirichletNodeX[0][1])
             # [6.28318531, 0.        ]
-            # self.rOld[nDoFs + NX*NDX + 1,:,0]
-            self.boundaryIntegrals[NX*NDX + 1] = \
-                g(self.nodes[nDoFs + NX*NDX + 1]) \
-              * 0.5*(1/self.idy[-1][0], self.nodes[nDoFs + NX*NDX + 2,0] - 2*np.pi)
+            self.boundaryIntegrals[nTopNodes] = \
+                g(self.nodes[nDoFs + nTopNodes]) * 0.5 * \
+                (1/self.idy[-1][0], DirichletNodeX[0][-2] - 2*np.pi)
             # [0., 1.]
-            # self.rOld[nDoFs + NX*NDX,:,0]
-            self.boundaryIntegrals[NX*NDX] = \
-                g(self.nodes[nDoFs + NX*NDX]) \
-              * 0.5*(-1/self.idy[0][-1], self.nodes[nDoFs + NX*NDX-1,0])
+            self.boundaryIntegrals[nTopNodes - 1] = \
+                g(self.nodes[nDoFs + nTopNodes - 1]) * 0.5 * \
+                (-1/self.idy[0][-1], DirichletNodeX[1][1])
             # [6.28318531, 1.        ]
-            # self.rOld[nDoFs,:,0]
-            self.boundaryIntegrals[0] = g(self.nodes[nDoFs]) \
-                * 0.5*(1/self.idy[-1][-1], 2*np.pi - self.nodes[nDoFs + 1,0])
+            self.boundaryIntegrals[0] = g(self.nodes[nDoFs]) * 0.5 * \
+                (1/self.idy[-1][-1], 2*np.pi - DirichletNodeX[1][-2])
             self.rOld[nDoFs:,:,0] += self.boundaryIntegrals
             self.gradphiSums = self.rOld[:,:,0]
             nConstraints = 2*nNodes + 1
@@ -635,7 +629,7 @@ class FciFemSim:
         self.G._shape = (nQuads * NX, nConstraints)
         del gd, ci, ri, offsets, weights, quads, quadWeights
         start_time = default_timer()
-        QR, r = ssqr.QR_C(self.G)
+        QR, r = ssqr.QR_C(self.G, tol=ssqr.SPQR_DEFAULT_TOL)
         if r == -1:
             raise SystemExit("Error in QR decomposition")
         try:
@@ -686,7 +680,7 @@ class FciFemSim:
                     self.b[i] += quadWeight * fq * phis[alpha]
                 for beta, j in enumerate(inds):
                     if j < 0: # j is boundary node
-                        ##### Not sure if this can always be uncommmented? #####
+                        ##### Not sure if this can/should always be uncommmented? #####
                         ##### Needed for projection; but does it affect Poisson/CD #####
                         # self.b[i] -= quadWeight * (
                         #     phis[alpha] * phis[beta] )

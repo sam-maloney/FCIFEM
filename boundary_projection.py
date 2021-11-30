@@ -135,7 +135,8 @@ for iN, NX in enumerate(NX_array):
 #%% Plotting
 
 # clear the current figure, if opened, and set parameters
-fig = plt.gcf()
+# fig = plt.gcf()
+fig = plt.figure()
 fig.clf()
 fig.set_size_inches(7.75,3)
 plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
