@@ -27,7 +27,7 @@ from timeit import default_timer
 #         return (1 / (1 + 4*np.pi**2)) * self(p)
 
 class TestProblem:
-    A = 0.02
+    a = 0.02
     dfdyMax = 1
     dfdxMax = 1
     
@@ -39,9 +39,9 @@ class TestProblem:
         y = p.reshape(-1,2)[:,1]
         return ((abs(x - np.pi) < 1e-10) & (abs(y) < 1e-10)).astype('float')
 
-# function for quadratic patch test
+# function for linear patch test
 class linearPatch():
-    A = 0.02
+    a = 0.02
     
     dfdyMax = 2.
     dfdxMax = 1.
@@ -56,24 +56,30 @@ class linearPatch():
 
 
 class QuadraticTestProblem:
+    xmax = 2*np.pi
     n = 20
-    A = 0.02
+    # a = 0.01
+    b = 0.05
+    # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
+    a = (1 - b*xmax)/xmax**2
     
-    dfdyMax = 40*np.pi
-    dfdxMax = 160*A*np.pi**2 + 1
+    dfdyMax = n*xmax
+    dfdxMax = 1 + 2*a*n*xmax**2 + b*n*xmax
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
         n = self.n
-        A = self.A
-        return 6*A*n*x*np.cos(n*(y - A*x**2)) + \
-            (4*A**2*n**2*x**3 + n**2*x)*np.sin(n*(y - A*x**2))
+        a = self.a
+        b = self.b
+        return (6*a*n*x - 2*b*n)*np.cos(n*(y - a*x**2 - b*x)) + \
+            (4*a**2*n**2*x**3 + 4*a*b*n**2*x**2 + b**2*n**2*x + n**2*x) * \
+            np.sin(n*(y - a*x**2 - b*x))
     
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return x*np.sin(self.n*(y - self.A*x**2))
+        return x*np.sin(self.n*(y - self.a*x**2 - self.b*x))
         
 f = QuadraticTestProblem()
 # f = linearPatch()
@@ -81,26 +87,54 @@ f = QuadraticTestProblem()
 dfRatio = f.dfdyMax / f.dfdxMax
 
 class QaudraticBoundaryFunction:
-    def __init__(self, A):
-        self.A = A
-        self.invA = 1/A
+    
+    def __init__(self, a, b=0.):
+        self.a = a
+        self.b = b
+        if b == 0.:
+            self.inva = 1/a
+            self.deriv = self.deriv0
+            # # This doesn't work
+            # self.__call__ = self.call0
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        zetaBottom = np.sqrt(x**2 - self.invA*y)
-        zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
+        a = self.a
+        b = self.b
+        zetaBottom = (-b + np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x)))/(2*a)
+        zetaTop = (-b + np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x - 1)))/(2*a)
         return zetaBottom, zetaTop
     
     def deriv(self, p, boundary):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
+        a = self.a
+        b = self.b
         if boundary == 'bottom':
-            dBdx = x / np.sqrt(x**2 - self.invA*y)
-            dBdy = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
+            dBdy = -1 / np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x))
+            dBdx = -(2*a*x + b) * dBdy
         elif boundary == 'top':
-            dBdx = x / np.sqrt(x**2 + self.invA*(1 - y))
-            dBdy = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
+            dBdy = -1 / np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x - 1))
+            dBdx = -(2*a*x + b) * dBdy
+        return dBdx, dBdy
+    
+    def call0(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        zetaBottom = np.sqrt(x**2 - self.inva*y)
+        zetaTop = np.sqrt(x**2 + self.inva*(1 - y))
+        return zetaBottom, zetaTop
+    
+    def deriv0(self, p, boundary):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        if boundary == 'bottom':
+            dBdx = x / np.sqrt(x**2 - self.inva*y)
+            dBdy = -0.5*self.inva / np.sqrt(x**2 - self.inva*y)
+        elif boundary == 'top':
+            dBdx = x / np.sqrt(x**2 + self.inva*(1 - y))
+            dBdy = -0.5*self.inva / np.sqrt(x**2 + self.inva*(1 - y))
         return dBdx, dBdy
 
 class LinearBoundaryFunction:
@@ -132,8 +166,8 @@ class StraightBoundaryFunction:
 # mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
 # B = LinearBoundaryFunction(mapping.slope)
 
-B = QaudraticBoundaryFunction(f.A)
-mapping = fcifem.mappings.QuadraticMapping(f.A)
+B = QaudraticBoundaryFunction(f.a, f.b)
+mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
 # mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
 
@@ -142,13 +176,13 @@ kwargs={
     'dt' : 1.,
     'velocity' : np.array([0., 0.]), # Makes the advection matrix zero
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.1,
-    'py' : 0.1,
+    'px' : 0.,
+    'py' : 0.,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 5
-stop = 5
+start = 1
+stop = 4
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -184,7 +218,7 @@ for iN, NX in enumerate(NX_array):
     #     Qord = 2
     # else:
     #     Qord = 1
-    Qord = 2
+    Qord = 1
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
     sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord, 
@@ -239,8 +273,8 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-sim.generatePlottingPoints(nx=1, ny=1)
-# sim.generatePlottingPoints(nx=10, ny=1)
+# sim.generatePlottingPoints(nx=1, ny=1)
+sim.generatePlottingPoints(nx=10, ny=1)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=int(NY/NX))
 sim.computePlottingSolution()
@@ -257,10 +291,10 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-                      ,cmap='seismic', vmin=vmin, vmax=vmax)
+# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+#                       ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.X, sim.Y, F, shading='gouraud')
-# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 # for yi in [0.0, 0.1, 0.2]:
 for yi in [0.0]:

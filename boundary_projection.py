@@ -16,67 +16,91 @@ import scipy.sparse.linalg as sp_la
 
 import fcifem
 
-class TestProblem:
+class QuadraticTestProblem:
+    xmax = 2*np.pi
     n = 20
-    A = 0.02
+    # a = 0.01
+    b = 0.05
+    # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
+    a = (1 - b*xmax)/xmax**2
+    
+    dfdyMax = n*xmax
+    dfdxMax = 1 + 2*a*n*xmax**2 + b*n*xmax
     
     def __call__(self, p):
-        originalShape = p.shape
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
         n = self.n
-        A = self.A
-        p.shape = originalShape
-        return 6*A*n*x*np.cos(n*(y - A*x**2)) + \
-            (4*A**2*n**2*x**3 + n**2*x)*np.sin(n*(y - A*x**2))
+        a = self.a
+        b = self.b
+        return (6*a*n*x - 2*b*n)*np.cos(n*(y - a*x**2 - b*x)) + \
+            (4*a**2*n**2*x**3 + 4*a*b*n**2*x**2 + b**2*n**2*x + n**2*x) * \
+            np.sin(n*(y - a*x**2 - b*x))
     
     def solution(self, p):
-        originalShape = p.shape
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
-        p.shape = originalShape
-        return x*np.sin(self.n*(y - self.A*x**2))
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        return x*np.sin(self.n*(y - self.a*x**2 - self.b*x))
         
-f = TestProblem()
+f = QuadraticTestProblem()
 
-dfdyMax = 40*np.pi
-dfdxMax = 160*f.A*np.pi**2 + 1
+dfdyMax = f.dfdyMax
+dfdxMax = f.dfdxMax
 dfRatio = dfdyMax / dfdxMax
 
 class QaudraticBoundaryFunction:
     
-    def __init__(self, A):
-        self.A = A
-        self.invA = 1/A
+    def __init__(self, a, b=0.):
+        self.a = a
+        self.b = b
+        if b == 0.:
+            self.inva = 1/a
+            self.deriv = self.deriv0
+            # # This doesn't work
+            # self.__call__ = self.call0
     
     def __call__(self, p):
-        originalShape = p.shape
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
-        zetaBottom = np.sqrt(x**2 - self.invA*y)
-        zetaTop = np.sqrt(x**2 + self.invA*(1 - y))
-        p.shape = originalShape
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        a = self.a
+        b = self.b
+        zetaBottom = (-b + np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x)))/(2*a)
+        zetaTop = (-b + np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x - 1)))/(2*a)
         return zetaBottom, zetaTop
     
     def deriv(self, p, boundary):
-        originalShape = p.shape
-        p.shape = (-1,2)
-        x = p[:,0]
-        y = p[:,1]
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        a = self.a
+        b = self.b
         if boundary == 'bottom':
-            dBdx = x / np.sqrt(x**2 - self.invA*y)
-            dBdy = -0.5*self.invA / np.sqrt(x**2 - self.invA*y)
+            dBdy = -1 / np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x))
+            dBdx = -(2*a*x + b) * dBdy
         elif boundary == 'top':
-            dBdx = x / np.sqrt(x**2 + self.invA*(1 - y))
-            dBdy = -0.5*self.invA / np.sqrt(x**2 + self.invA*(1 - y))
-        p.shape = originalShape
+            dBdy = -1 / np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x - 1))
+            dBdx = -(2*a*x + b) * dBdy
         return dBdx, dBdy
     
-B = QaudraticBoundaryFunction(f.A)
-mapping = fcifem.mappings.QuadraticMapping(f.A)
+    def call0(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        zetaBottom = np.sqrt(x**2 - self.inva*y)
+        zetaTop = np.sqrt(x**2 + self.inva*(1 - y))
+        return zetaBottom, zetaTop
+    
+    def deriv0(self, p, boundary):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        if boundary == 'bottom':
+            dBdx = x / np.sqrt(x**2 - self.inva*y)
+            dBdy = -0.5*self.inva / np.sqrt(x**2 - self.inva*y)
+        elif boundary == 'top':
+            dBdx = x / np.sqrt(x**2 + self.inva*(1 - y))
+            dBdy = -0.5*self.inva / np.sqrt(x**2 + self.inva*(1 - y))
+        return dBdx, dBdy
+    
+B = QaudraticBoundaryFunction(f.a, f.b)
+mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
 kwargs={
     'mapping' : mapping,
@@ -173,7 +197,7 @@ field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
                       ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
-for yi in [0.0, 0.1, 0.2]:
+for yi in [0.0]:
     ax1.plot(x, [sim.mapping(np.array([[0, yi]]), i) for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')
