@@ -72,9 +72,12 @@ class QuadraticTestProblem:
         n = self.n
         a = self.a
         b = self.b
-        return (6*a*n*x - 2*b*n)*np.cos(n*(y - a*x**2 - b*x)) + \
-            (4*a**2*n**2*x**3 + 4*a*b*n**2*x**2 + b**2*n**2*x + n**2*x) * \
+        return 2*n*(3*a*x - b)*np.cos(n*(y - a*x**2 - b*x)) + \
+            n**2*x*(4*a**2*x**2 + 4*a*b*x + b**2 + 1) * \
             np.sin(n*(y - a*x**2 - b*x))
+        # return (6*a*n*x - 2*b*n)*np.cos(n*(y - a*x**2 - b*x)) + \
+        #     (4*a**2*n**2*x**3 + 4*a*b*n**2*x**2 + b**2*n**2*x + n**2*x) * \
+        #     np.sin(n*(y - a*x**2 - b*x))
     
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
@@ -182,7 +185,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 4
+stop = 3
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)

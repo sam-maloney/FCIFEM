@@ -45,7 +45,9 @@ class PeriodicBoundary(Boundary):
         super().__init__(sim)
         self.nNodes = self.nDoFs
     
-    def __call__(self, p, iPlane):
+    def __call__(self, p, iPlane=None):
+        if iPlane is None:
+            iPlane = np.searchsorted(self.sim.nodeX[1:], p[0])
         originalShape = p.shape
         p.shape = (2,)
         nDoFs = self.nDoFs
@@ -185,7 +187,9 @@ class DirichletBoundary(Boundary):
         self.nodes[nDoFs:-2*nYnodes - nBottomNodes,1] = 1.
         return self.nodes
     
-    def __call__(self, p, iPlane):
+    def __call__(self, p, iPlane=None):
+        if iPlane is None:
+            iPlane = np.searchsorted(self.sim.nodeX[1:], p[0])
         originalShape = p.shape
         p.shape = (2,)
         nXnodes = self.nXnodes
