@@ -11,6 +11,25 @@ import numpy as np
 import fcifem
 
 
+class TestProblem:
+    xmax = 2*np.pi
+    # a = 0.01
+    b = 0.05
+    # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
+    a = (1 - b*xmax)/xmax**2
+    
+    dfdyMax = 1
+    dfdxMax = 1
+    
+    def __call__(self, p):
+        return np.ones(p.size // 2)
+    
+    def solution(self, p):
+        return np.ones(p.size // 2)
+        # x = p.reshape(-1,2)[:,0]
+        # y = p.reshape(-1,2)[:,1]
+        # return ((abs(x - np.pi) < 1e-10) & (abs(y) < 1e-10)).astype('float')
+
 class QuadraticTestProblem:
     xmax = 2*np.pi
     n = 20
@@ -40,7 +59,8 @@ class QuadraticTestProblem:
         y = p.reshape(-1,2)[:,1]
         return x*np.sin(self.n*(y - self.a*x**2 - self.b*x))
         
-f = QuadraticTestProblem()
+f = TestProblem()
+# f = QuadraticTestProblem()
 
 class QaudraticBoundaryFunction:
     
@@ -114,7 +134,8 @@ NY = NX
 sim = fcifem.FciFemSim(NX, NY, **kwargs)
 
 # BC = fcifem.boundaries.PeriodicBoundary(sim)
-BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=None)
+BC = fcifem.boundaries.DirichletXPeriodicYBoundary(sim, f.solution)
+# BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=None)
 sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
 
 
@@ -122,8 +143,9 @@ nPoints = 1000
 seed = 42
 rtol = 1e-4
 atol = 1e-5
+phitol = 1e-10
 
-dfRatio = f.dfdyMax / f.dfdxMax
+dfRatio = 2*np.pi*(NY//NX)
 # dx = 2*np.pi/(NX*100)
 dy = 1/(NY*5000)
 dx = dy*dfRatio
@@ -139,6 +161,8 @@ inds = np.empty((nPoints, 4), dtype='int')
 for i, point in enumerate(points):
     phis[i], gradphis[i], inds[i] \
         = BC(point, np.searchsorted(sim.nodeX[1:], point[0]))
+    if np.abs(phis[i].sum() - 1) > phitol:
+        print(f'No partition of unity for point {i} = {point}')
     try:
         phiR, _, tmp_inds = BC(point + (dx, 0.))
         np.testing.assert_array_equal(inds[i], tmp_inds)

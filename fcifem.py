@@ -254,7 +254,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(1/Qord - 1, 1 - 1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
@@ -277,7 +277,7 @@ class FciFemSim:
                         continue # move to next i if boundary node
                     for beta, j in enumerate(inds):
                         if j < 0: # j is boundary node
-                            ##### Not sure if this can/should always be uncommmented? #####
+                            ##### Not sure if this can/should always be uncommented? #####
                             ##### Needed for projection; but does it affect Poisson/CD #####
                             # self.b[i] -= quadWeights[iQ] * (
                             #     phis[alpha] * phis[beta] )
@@ -381,7 +381,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(1/Qord - 1, 1 - 1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
@@ -515,6 +515,7 @@ class FciFemSim:
         gd = np.empty(9 * nQuads * NX)
         ri = np.empty(9 * nQuads * NX, dtype='int')
         ci = np.empty(9 * nQuads * NX, dtype='int')
+        bounds = np.empty(nQuads * NX)
         
         self.rOld = np.zeros((nNodes, self.ndim, 3))
         
@@ -532,7 +533,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(1/Qord - 1, 1 - 1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
@@ -545,6 +546,7 @@ class FciFemSim:
                     [quadWeights * weight for weight in weights[i]] )
             
             quads += [self.nodeX[iPlane], 0]
+            bounds[iPlane*nQuads:(iPlane+1)*nQuads] = -quadWeights
             
             for iQ, quad in enumerate(quads):
                 phis, gradphis, inds = self.BC(quad, iPlane)
@@ -617,34 +619,54 @@ class FciFemSim:
             self.rOld[nDoFs:,:,0] += self.boundaryIntegrals
             self.gradphiSums = self.rOld[:,:,0]
             nConstraints = 2*nNodes + 1
+        elif (self.BC.name == 'DirichletXPeriodicY') and includeBoundaries:
+            self.boundaryIntegrals = np.zeros((self.BC.nDirichletNodes, 2))
+            nYnodes = self.BC.nYnodes
+            g = self.BC.g
+            # left boundary
+            self.boundaryIntegrals[-nYnodes:-1,0] = -g(self.nodes[-nYnodes:-1]) \
+                * 0.5 * np.flip(self.nodeY[0,2:] - self.nodeY[0,:-2])
+            # [0., 0.]
+            self.boundaryIntegrals[-1,0] = -g(self.nodes[-1]) \
+                * 0.5 * (self.nodeY[0,1] + 1-self.nodeY[0,-2])
+            # right boundary
+            self.boundaryIntegrals[-2*nYnodes:-nYnodes-1,0] = \
+                g(self.nodes[-2*nYnodes:-nYnodes-1]) \
+              * 0.5 * np.flip(self.nodeY[-1,2:] - self.nodeY[-1,:-2])
+            # [6.28318531, 0.        ]
+            self.boundaryIntegrals[-nYnodes-1,0] = g(self.nodes[-nYnodes-1]) \
+                * 0.5 * (self.nodeY[-1,1] + 1-self.nodeY[-1,-2])
+            self.rOld[nDoFs:,:,0] += self.boundaryIntegrals
+            self.gradphiSums = self.rOld[:,:,0]
+            nConstraints = 2*nNodes + 1
         else:
             self.gradphiSums = self.rOld[:nDoFs,:,0]
             nConstraints = 2*nDoFs + 1
         
-        ##### Using SuiteSparse QR decomposition #####
-        # Form the transpose of G (i.e. ri and ci intentionally swapped)
-        # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
-        self.G = sp.csc_matrix((gd[:index], (ci[:index], ri[:index])),
-                      shape=(np.iinfo('int32').max + 1, nConstraints))
-        self.G._shape = (nQuads * NX, nConstraints)
-        del gd, ci, ri, offsets, weights, quads, quadWeights
-        start_time = default_timer()
-        QR, r = ssqr.QR_C(self.G, tol=ssqr.SPQR_DEFAULT_TOL)
-        if r == -1:
-            raise SystemExit("Error in QR decomposition")
-        try:
-            QR.E[0][0]
-            E = np.frombuffer(QR.E[0], dtype=np.int64, count=r)
-            rhs = np.append(self.gradphiSums.T.ravel(), 0.)[E]
-        except:
-            rhs = np.append(self.gradphiSums.T.ravel(), 0.)[:r]
-        R = ssqr.cholmodSparseToScipyCsc(QR.R)
-        x = np.empty(nQuads * NX)
-        x[:r] = sp_la.spsolve_triangular(R.T[:r,:r], rhs, lower=True,
-                                          overwrite_A=True, overwrite_b=True)
-        x[r:] = 0.
-        self.xi = (ssqr.qmult(QR, x), r)
-        print(f'xi solve time = {default_timer()-start_time} s')
+        # ##### Using SuiteSparse QR decomposition #####
+        # # Form the transpose of G (i.e. ri and ci intentionally swapped)
+        # # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
+        # self.G = sp.csc_matrix((gd[:index], (ci[:index], ri[:index])),
+        #               shape=(np.iinfo('int32').max + 1, nConstraints))
+        # self.G._shape = (nQuads * NX, nConstraints)
+        # del gd, ci, ri, offsets, weights, quads, quadWeights
+        # start_time = default_timer()
+        # QR, r = ssqr.QR_C(self.G, tol=ssqr.SPQR_DEFAULT_TOL)
+        # if r == -1:
+        #     raise SystemExit("Error in QR decomposition")
+        # try:
+        #     QR.E[0][0]
+        #     E = np.frombuffer(QR.E[0], dtype=np.int64, count=r)
+        #     rhs = np.append(self.gradphiSums.T.ravel(), 0.)[E]
+        # except:
+        #     rhs = np.append(self.gradphiSums.T.ravel(), 0.)[:r]
+        # R = ssqr.cholmodSparseToScipyCsc(QR.R)
+        # x = np.empty(nQuads * NX)
+        # x[:r] = sp_la.spsolve_triangular(R.T[:r,:r], rhs, lower=True,
+        #                                   overwrite_A=True, overwrite_b=True)
+        # x[r:] = 0.
+        # self.xi = (ssqr.qmult(QR, x), r)
+        # print(f'xi solve time = {default_timer()-start_time} s')
 
         # ##### Using scipy.sparse.linalg, much slower, uses less memory #####
         # self.G = sp.csr_matrix((gd[:index], (ri[:index], ci[:index])),
@@ -659,11 +681,23 @@ class FciFemSim:
         # self.xi = sp_la.lsqr(self.G, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
         # print(f'xi solve time = {default_timer()-start_time} s')
         
+        ##### Using scipy.optimize.lsq_linear #####
+        ##### VERY slow, but guarantees non-negative quadWeights #####
+        from scipy.optimize import lsq_linear
+        self.G = sp.csr_matrix((gd[:index], (ri[:index], ci[:index])),
+                                shape=(nConstraints, nQuads * NX))
+        rhs = np.append(self.gradphiSums.T.ravel(), 0.)
+        maxit = nQuads * NX
+        tol = 1e-10
+        self.xi = lsq_linear(self.G, rhs, (bounds,np.inf), max_iter=100,
+                             tol=tol)
+        
         self.rNew = np.zeros((nNodes, self.ndim, 3))
         
         index = 0
         for iQ, (inds, phis, gradphis, quadWeight, quad) in enumerate(self.store):
-            quadWeight += self.xi[0][iQ]
+            # quadWeight += self.xi[0][iQ]
+            quadWeight += self.xi.x[iQ]
             if f is not None:
                 fq = f(quad)
             for alpha, i in enumerate(inds):
@@ -803,10 +837,10 @@ class FciFemSim:
         self.indPlot = np.empty((nPointsTotal, 4), dtype='int')
         self.X = np.empty(0)       
         
-        if self.BC.name == 'Dirichlet':
-            self.uPlot = np.concatenate((self.u, [1.]))
+        if self.BC.name == 'periodic':
+            self.uPlot = self.u
         else:
-            self.uPlot = self.u    
+            self.uPlot = np.concatenate((self.u, [1.]))
             
         for iPlane in range(NX):
             # dx = self.dx[iPlane]

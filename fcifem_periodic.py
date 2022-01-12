@@ -247,7 +247,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
@@ -394,7 +394,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
@@ -552,7 +552,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
@@ -721,7 +721,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
@@ -986,7 +986,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
@@ -1167,7 +1167,7 @@ class FciFemSim:
                 offsets, weights = roots_legendre(Qord)
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
-                weights = np.repeat(1., Qord)
+                weights = np.repeat(2/Qord, Qord)
             
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)

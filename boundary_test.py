@@ -27,12 +27,16 @@ from timeit import default_timer
 #         return (1 / (1 + 4*np.pi**2)) * self(p)
 
 class TestProblem:
-    a = 0.02
+    xmax = 2*np.pi
+    # a = 0.02
+    b = 0.05
+    # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
+    a = (1 - b*xmax)/xmax**2
     dfdyMax = 1
     dfdxMax = 1
     
     def __call__(self, p):
-        return np.ones(int(p.size / 2))
+        return np.ones(p.size // 2)
     
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
@@ -41,13 +45,17 @@ class TestProblem:
 
 # function for linear patch test
 class linearPatch():
-    a = 0.02
+    xmax = 2*np.pi
+    # a = 0.02
+    b = 0.05
+    # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
+    a = (1 - b*xmax)/xmax**2
     
     dfdyMax = 2.
     dfdxMax = 1.
     
     def __call__(self, p):
-        return np.zeros(int(p.size / 2))
+        return np.zeros(p.size // 2)
     
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
@@ -57,37 +65,35 @@ class linearPatch():
 
 class QuadraticTestProblem:
     xmax = 2*np.pi
-    n = 20
+    n = 2
     # a = 0.01
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
     a = (1 - b*xmax)/xmax**2
     
-    dfdyMax = n*xmax
-    dfdxMax = 1 + 2*a*n*xmax**2 + b*n*xmax
+    dfdyMax = 2*np.pi*n*xmax
+    dfdxMax = 1 + 2*a*2*np.pi*n*xmax**2 + b*2*np.pi*n*xmax
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        n = self.n
+        n = 2*np.pi*self.n
         a = self.a
         b = self.b
-        return 2*n*(3*a*x - b)*np.cos(n*(y - a*x**2 - b*x)) + \
-            n**2*x*(4*a**2*x**2 + 4*a*b*x + b**2 + 1) * \
-            np.sin(n*(y - a*x**2 - b*x))
-        # return (6*a*n*x - 2*b*n)*np.cos(n*(y - a*x**2 - b*x)) + \
-        #     (4*a**2*n**2*x**3 + 4*a*b*n**2*x**2 + b**2*n**2*x + n**2*x) * \
-        #     np.sin(n*(y - a*x**2 - b*x))
+        return n*(n*x*(4*a**2*x**2 + 4*a*b*x + b**2 + 1)*np.sin(n*(y - a*x**2 - b*x))
+                  + 2*(3*a*x + b)*np.cos(n*(y - a*x**2 - b*x)))
     
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return x*np.sin(self.n*(y - self.a*x**2 - self.b*x))
+        return x*np.sin(2*np.pi*self.n*(y - self.a*x**2 - self.b*x))
         
 f = QuadraticTestProblem()
 # f = linearPatch()
 
 dfRatio = f.dfdyMax / f.dfdxMax
+
+#%% Boundary Functions and Mappings
 
 class QaudraticBoundaryFunction:
     
@@ -156,7 +162,7 @@ class LinearBoundaryFunction:
 
 class StraightBoundaryFunction:
     def __call__(self, p):
-        nPoints = int(p.size / 2)
+        nPoints = p.size // 2
         return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
     
     def deriv(self, p, boundary):
@@ -172,20 +178,21 @@ class StraightBoundaryFunction:
 B = QaudraticBoundaryFunction(f.a, f.b)
 mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
-# mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
 
+#%%
+perturbation = 0.1
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
     'velocity' : np.array([0., 0.]), # Makes the advection matrix zero
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.,
-    'py' : 0.,
+    'px' : perturbation,
+    'py' : perturbation,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
 start = 1
-stop = 3
+stop = 1
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -201,30 +208,37 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    # NY = 20
+    NQX = 1
+    NY = 10*NX
     # NY = NX
-    NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
-    NDX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
-    # NDX = 32
+    # NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
+    # NQX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
+    NQY = NY
 
-    # allocate arrays and compute grid
+    # initialize simulation class
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
+    # BC = fcifem.boundaries.DirichletXPeriodicYBoundary(sim, f.solution)
     BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=None)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
     
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
         
     # Assemble the mass matrix and forcing term
-    # if NDX == 1:
+    # if NQX == 1:
     #     Qord = 2
     # else:
     #     Qord = 1
-    Qord = 1
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
-    sim.computeSpatialDiscretization(f, NQX=NDX, NQY=NY, Qord=Qord, 
+    Qord = 2
+    
+    vci = None
+    if (vci == 'VCI'):
+        sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
+    elif (vci == 'VCI-C'):
+        sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    
+    sim.computeSpatialDiscretization(f, NQX=NQX, NQY=NQY, Qord=Qord, 
         quadType='g', massLumping=False, includeBoundaries=True)
     
     try:
@@ -276,8 +290,8 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-# sim.generatePlottingPoints(nx=1, ny=1)
-sim.generatePlottingPoints(nx=10, ny=1)
+sim.generatePlottingPoints(nx=1, ny=1)
+# sim.generatePlottingPoints(nx=10, ny=1)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=int(NY/NX))
 sim.computePlottingSolution()
@@ -294,19 +308,20 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-#                       ,cmap='seismic', vmin=vmin, vmax=vmax)
+field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+                      ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.X, sim.Y, F, shading='gouraud')
-field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
-x = np.linspace(0, sim.nodeX[-1], 100)
-# for yi in [0.0, 0.1, 0.2]:
-for yi in [0.0]:
-    ax1.plot(x, [sim.mapping(np.array([[0, yi]]), i) for i in x], 'k')
+# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+# x = np.linspace(0, sim.nodeX[-1], 100)
+# # for yi in [0.0, 0.1, 0.2]:
+# for yi in [sim.mapping(np.array((x, 0.5)), 0.) for x in sim.nodeX]:
+#     ax1.plot(x, [sim.mapping(np.array([[0, float(yi)]]), i) for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')
 # ax.plot(sim.X[np.argmax(sim.U)], sim.Y[np.argmax(sim.U)],
 #   'g+', markersize=10)
 # cbar = plt.colorbar(field, format='%.0e')
+plt.ylim((0., 1.))
 cbar = plt.colorbar(field)
 cbar.formatter.set_powerlimits((0, 0))
 plt.xlabel(r'$x$')
@@ -315,10 +330,11 @@ plt.xticks(np.linspace(0, 2*np.pi, 5),
     ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
 # plt.xticks(np.linspace(0, 2*np.pi, 7), 
 #     ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+plt.title('Absolute Error')
 plt.margins(0,0)
 
 # plot the error convergence
-ax1 = plt.subplot(122)
+axR1 = plt.subplot(122)
 plt.loglog(NX_array, E_inf, '.-', label=r'$E_\infty$ magnitude')
 plt.loglog(NX_array, E_2, '.-', label=r'$E_2$ magnitude')
 plt.minorticks_off()
@@ -327,7 +343,7 @@ plt.xlabel(r'$NX$')
 plt.ylabel(r'Magnitude of Error Norm')
 
 # plot the intra-step order of convergence
-ax2 = ax1.twinx()
+axR2 = axR1.twinx()
 logN = np.log(NX_array)
 logE_inf = np.log(E_inf)
 logE_2 = np.log(E_2)
@@ -336,42 +352,49 @@ order_2 = (logE_2[0:-1] - logE_2[1:])/(logN[1:] - logN[0:-1])
 intraN = np.logspace(start+0.5, stop-0.5, num=nSamples-1, base=2.0)
 plt.plot(intraN, order_inf, '.:', linewidth=1, label=r'$E_\infty$ order')
 plt.plot(intraN, order_2, '.:', linewidth=1, label=r'$E_2$ order')
-plt.plot(plt.xlim(), [2, 2], 'k:', linewidth=1, label='Expected')
+plt.plot(plt.xlim(), [2, 2], 'k:', linewidth=1)#, label='Expected')
 plt.ylim(0, 5)
 plt.yticks(np.linspace(0,5,6))
 # plt.ylim(0, 3)
 # plt.yticks([0, 0.5, 1, 1.5, 2, 2.5, 3])
 plt.ylabel(r'Intra-step Order of Convergence')
-lines, labels = ax1.get_legend_handles_labels()
-lines2, labels2 = ax2.get_legend_handles_labels()
-ax2.legend(lines + lines2, labels + labels2, loc='best')
+lines, labels = axR1.get_legend_handles_labels()
+lines2, labels2 = axR2.get_legend_handles_labels()
+axR2.legend(lines + lines2, labels + labels2, loc='best')
+plt.title('Convergence')
 plt.margins(0,0)
 
-# plt.savefig(f"CD_{kwargs['px']}px_{kwargs['py']}py_notMassLumped_RK4.pdf",
-#     bbox_inches = 'tight', pad_inches = 0)
+filename = mapping.name
+if (mapping.name != 'straight'):
+    filename += f'_{int(NY/NX)}N'
+filename += '_' + [f'p{perturbation}', 'uniform'][perturbation == 0.]
+filename += '_' + ['DxPy', 'DxDy'][BC.name == 'Dirichlet']
+if (vci is not None):
+    filename += '_' + vci
 
-# plt.savefig("CD_MassLumped_RK4.pdf",
-#     bbox_inches = 'tight', pad_inches = 0)
+# plt.sca(ax1)
+# plt.savefig(filename + '.pdf', bbox_inches = 'tight', pad_inches = 0)
 
-
-# ##### NY = 20*NX, NDX = 32, Qord = 1
-# NX_array = np.array([  2,   4,   8,  16,  32,  64, 128])
-# E_2 = np.array([3.19128962e-02, 1.66174040e-02, 7.35715866e-03, 5.05400243e-03,
-#        1.37505435e-03, 6.28625444e-04, 1.49246335e-04])
-# E_inf = np.array([6.01267696e-02, 3.91689608e-02, 2.59411522e-02, 2.42221312e-02,
-#        8.78515282e-03, 6.51887251e-03, 3.40038087e-03])
-# t_setup = np.array([4.92162494e-01, 2.07696175e+00, 8.58752604e+00, 3.48628305e+01,
-#        1.41986197e+02, 5.63175996e+02, 2.29591821e+03])
-# t_solve = np.array([6.79264893e-03, 2.44334240e-02, 4.95543720e-02, 1.81298157e-01,
-#        1.14694606e+00, 8.82098613e+00, 6.88338451e+01])
-
-# ##### NY = 20*NX, NDX = 32, Qord = 2
-# NX_array = np.array([ 2,  4,  8, 16, 32, 64])
-# E_2 = np.array([3.20631362e-02, 1.38357481e-02, 4.66860478e-03, 2.56289445e-03,
-#         9.61139994e-03, 1.37399231e-03])
-# E_inf = np.array([9.04214930e-02, 5.24540041e-02, 1.64607034e-02, 1.43771064e-02,
-#        9.37708754e-02, 1.07042116e-02])
-# t_setup = np.array([1.93709404e+00, 8.34575381e+00, 3.42601427e+01, 1.41035787e+02,
-#        5.65862695e+02, 2.32414412e+03])
-# t_solve = np.array([7.75411818e-03, 2.43537831e-02, 4.95607180e-02, 1.78673380e-01,
-#        1.11589643e+00, 9.6233015e+00])
+#### Plot the quadrature points #####
+from scipy.special import roots_legendre
+for iPlane in range(NX):
+    dx = sim.dx[iPlane]
+    ##### generate quadrature points
+    if sim.quadType.lower() in ('gauss', 'g', 'gaussian'):
+        offsets, weights = roots_legendre(Qord)
+    elif sim.quadType.lower() in ('uniform', 'u'):
+        offsets = np.linspace(1/Qord - 1, 1 - 1/Qord, Qord)
+        weights = np.repeat(2/Qord, Qord)
+    offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
+    weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
+    quads = ( np.indices([NQX, NQY], dtype='float').T.
+              reshape(-1, sim.ndim) + 0.5 ) * [dx/NQX, 1/NQY]
+    quadWeights = np.repeat(1., len(quads))
+    for i in range(sim.ndim):
+        quads = np.concatenate( 
+            [quads + offset*np.eye(sim.ndim)[i] for offset in offsets[i]] )
+        quadWeights = np.concatenate(
+            [quadWeights * weight for weight in weights[i]] )
+    
+    quads += [sim.nodeX[iPlane], 0]
+    ax1.plot(quads[:,0], quads[:,1], 'k+')
