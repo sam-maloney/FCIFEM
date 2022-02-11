@@ -18,7 +18,7 @@ import fcifem
 
 class QuadraticTestProblem:
     xmax = 2*np.pi
-    n = 20
+    n = 16
     # a = 0.01
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
@@ -43,10 +43,7 @@ class QuadraticTestProblem:
         return x*np.sin(self.n*(y - self.a*x**2 - self.b*x))
         
 f = QuadraticTestProblem()
-
-dfdyMax = f.dfdyMax
-dfdxMax = f.dfdxMax
-dfRatio = dfdyMax / dfdxMax
+dfRatio = f.dfdyMax / f.dfdxMax
 
 class QaudraticBoundaryFunction:
     
@@ -113,33 +110,36 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 3
+stop = 6
 nSamples = stop - start + 1
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int32')
 E_inf = np.empty(nSamples, dtype='float64')
 E_2 = np.empty(nSamples, dtype='float64')
+# NYratio = 1
+NYratio = np.rint(f.dfdyMax / (2*np.pi)).astype('int')
 
 # loop over N to test convergence where N is the number of
 # grid cells along one dimension, each cell forms 2 triangles
 # therefore number of nodes equals (N+1)*(N+1)
 for iN, NX in enumerate(NX_array):
     
-    # NY = NX
-    NY = int(dfdyMax / (2*np.pi)) * NX
-    NDX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
+    NY = NYratio * NX
+    # NDX = 1
+    NDX = max(np.rint(2*np.pi*NYratio / dfRatio).astype('int'), 1)
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=NDX)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
     
-    print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
+    print(f'NX = {NX}, \tNY = {NY}, \tnDoFs = {sim.nDoFs}')
     
     # Assemble the mass matrix and forcing term
     if NDX == 1:
         Qord = 2
     else:
         Qord = 1
+    # Qord = 3
     sim.computeSpatialDiscretization(f.solution, NQX=NDX, NQY=NY, Qord=Qord,
                                      quadType='g', massLumping = False)
     
@@ -176,8 +176,8 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-# sim.generatePlottingPoints(nx=1, ny=1)
-sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
+sim.generatePlottingPoints(nx=1, ny=1)
+# sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 sim.computePlottingSolution()
 
 u_plot = np.sum(sim.phiPlot * sim.u[sim.indPlot], axis=1)

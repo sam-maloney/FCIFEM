@@ -15,8 +15,8 @@ from timeit import default_timer
 import fcifem
 from integrators import *
 
-mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
-# mapping = fcifem.StraightMapping()
+mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
+# mapping = fcifem.mappings.StraightMapping()
 
 # velocity = np.array([1., 0.])
 # velocity = np.array([0., 0.1])
@@ -102,10 +102,9 @@ for iN, NX in enumerate(NX_array):
     
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    
-    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
-    
     sim.setInitialConditions(u0)
+    
+    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nDoFs}')
 
     # Assemble the stiffness matrix and itialize time-stepping scheme
     sim.computeSpatialDiscretization(NQX=6, NQY=NY, Qord=3, quadType='g',
@@ -124,10 +123,10 @@ for iN, NX in enumerate(NX_array):
     start_time = default_timer()
     
     # compute the analytic solution and error norms
-    u_exact = uExactFunc(sim.nodesMapped)
+    u_exact = uExactFunc(sim.DoFsMapped)
     
     E_inf[iN] = np.linalg.norm(sim.u - u_exact, np.inf)
-    E_2[iN] = np.linalg.norm(sim.u - u_exact)/np.sqrt(sim.nNodes)
+    E_2[iN] = np.linalg.norm(sim.u - u_exact)/np.sqrt(sim.nDoFs)
     
     # end_time = default_timer()
     

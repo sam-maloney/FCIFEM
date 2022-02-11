@@ -279,8 +279,8 @@ class FciFemSim:
                         if j < 0: # j is boundary node
                             ##### Not sure if this can/should always be uncommented? #####
                             ##### Needed for projection; but does it affect Poisson/CD #####
-                            # self.b[i] -= quadWeights[iQ] * (
-                            #     phis[alpha] * phis[beta] )
+                            self.b[i] -= quadWeights[iQ] * (
+                                phis[alpha] * phis[beta] )
                             self.b[i] -= quadWeights[iQ] * (
                                 (gradphis[alpha] @ self.velocity) * phis[beta] +
                                 (gradphis[alpha] @ (self.diffusivity @ gradphis[beta])) )

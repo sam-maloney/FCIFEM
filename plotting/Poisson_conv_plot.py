@@ -237,4 +237,4 @@ leg = axR2.legend(lines, labels, loc='lower left')
 # leg = axR2.legend(lines + [lines2[-1]], labels + [labels2[-1]], loc='lower left')
 plt.margins(0,0)
 
-plt.savefig("Poisson_conv_all_VCI.pdf", bbox_inches = 'tight', pad_inches = 0)
+# plt.savefig("Poisson_conv_all_VCI.pdf", bbox_inches = 'tight', pad_inches = 0)
