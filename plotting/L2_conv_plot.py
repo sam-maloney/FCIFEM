@@ -6,7 +6,6 @@ Created on Mon May 17 17:46:29 2021
 """
 
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 ##### Doubly-Periodic BCs #####
@@ -91,39 +90,42 @@ E_infD16p5 = np.array([3.60513171e-01, 1.11728717e-01, 2.64270520e-02, 1.1345508
 
 ##### Begin Plotting Routines #####
 
-mpl.rcParams['legend.fontsize'] = 'small'
-mpl.rcParams['markers.fillstyle'] = 'full'
-mpl.rcParams['lines.markersize'] = 5.0
-mpl.rcParams['lines.linewidth'] = 1.25
-mpl.rcParams['pdf.fonttype'] = 42
-# mpl.rc('font', **{'family': 'serif', 'serif': ['Latin Modern Roman']})
-# mpl.rc('font', **{'family': 'serif', 'serif': ['Palatino']})
-mpl.rcParams['text.usetex'] = True
-colors = mpl.rcParams['axes.prop_cycle'].by_key()['color']
+solid_linewidth = 1.25
+dashed_linewidth = 1.0
+
+plt.rcParams['markers.fillstyle'] = 'full'
+plt.rcParams['lines.markersize'] = 5.0
+plt.rcParams['lines.linewidth'] = solid_linewidth
+plt.rcParams['pdf.fonttype'] = 42
+plt.rcParams['text.usetex'] = True
+# fontsize : int or {'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'}
+plt.rcParams['legend.fontsize'] = 'small'
+# plt.rcParams['font.size'] = 'small'
+# plt.rcParams['axes.titlesize'] = 'medium'
+# plt.rcParams['axes.labelsize'] = 'medium'
+# plt.rcParams['xtick.labelsize'] = 'small'
+# plt.rcParams['ytick.labelsize'] = 'small'
+# plt.rcParams['figure.titlesize'] = 'large'
+
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
 blue = colors[0]
 orange = colors[1]
 green = colors[2]
 red = colors[3]
-# next are: purple, brown, pink, grey, yellow, cyan
+purple = colors[4]
+brown = colors[5]
+pink = colors[6]
+grey = colors[7]
+yellow = colors[8]
+cyan = colors[9]
 
 # clear the current figure, if opened, and set parameters
-fig = plt.gcf()
+fig = plt.figure()
 fig.clf()
 fig.set_size_inches(7.75,3)
 plt.subplots_adjust(hspace = 0.5, wspace = 0.5)
 # fig.set_size_inches(3.875,3)
 # plt.subplots_adjust(left = 0.2, right = 0.85)
-
-# SMALL_SIZE = 7
-# MEDIUM_SIZE = 8
-# BIGGER_SIZE = 10
-# plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
-# plt.rc('axes', titlesize=MEDIUM_SIZE)    # fontsize of the axes title
-# plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
-# plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
-# plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
-# plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
-# plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 # plot the error convergence for periodic BCs
 axL1 = plt.subplot(121)
@@ -138,6 +140,7 @@ plt.ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 plt.title(r'Doubly-Periodic BCs')
 
 # plot the intra-step order of convergence for periodic BCs
+plt.rcParams['lines.linewidth'] = dashed_linewidth
 axL2 = axL1.twinx()
 logN = np.log(NX_array)
 # logE_inf = np.log(E_infu)
@@ -151,11 +154,11 @@ order_2p5 = (logE_2p5[0:-1] - logE_2p5[1:])/(logN[1:] - logN[0:-1])
 # intraN = np.logspace(start+0.5, stop-0.5, num=stop-start, base=2.0)
 intraN = np.arange(2*start + 1, 2*stop, 2)
 plt.autoscale(False)
-plt.plot(plt.xlim(), [2, 2], ':k', linewidth=1, label='Expected')
-# plt.plot(intraN, order_inf, '.:', linewidth=1, label=r'$E_\infty$ order')
-plt.plot(intraN, order_2u, 'o:', linewidth=1, label=r'uniform order')
-# plt.plot(intraN, order_2p1, '.:', linewidth=1, label=r'10\% order')
-plt.plot(intraN, order_2p5, 's:', linewidth=1, color=red, label=r'50\% order')
+plt.plot(plt.xlim(), [2, 2], ':k', label='Expected')
+# plt.plot(intraN, order_inf, '.:', label=r'$E_\infty$ order')
+plt.plot(intraN, order_2u, 'o:', label=r'uniform order')
+# plt.plot(intraN, order_2p1, '.:', label=r'10\% order')
+plt.plot(intraN, order_2p5, 's:', color=red, label=r'50\% order')
 plt.ylim(0, 4)
 plt.yticks(np.linspace(0,4,5))
 plt.ylabel(r'Intra-step Order of Convergence')
@@ -166,19 +169,19 @@ axL2.legend(lines, labels, loc='best')
 # plt.margins(0,0)
 
 # plot the error convergence for Dirichlet BCs
+plt.rcParams['lines.linewidth'] = solid_linewidth
 axR1 = plt.subplot(122)
 plt.autoscale(True)
-N_array = np.log2(NX_array**2).astype('int')
 # N16_array = 16*np.array([ 2,  4,  8, 16, 32, 64])**2
 N16_array = np.array([ 6,  8, 10, 12, 14, 16])
 plt.semilogy(N_array, E_2Du, 'o-', color=blue, label=r'uniform 1:1')
 # plt.semilogy(N_array, E_2Dp1, '.-', label=r'10\%')
 plt.semilogy(N_array, E_2Dp5, 's-', color=red, label=r'50\% pert.~1:1')
-mpl.rcParams['markers.fillstyle'] = 'none'
+plt.rcParams['markers.fillstyle'] = 'none'
 plt.semilogy(N16_array, E_2D16u, 'o-', color=blue, label=r'uniform 1:16')
 # plt.semilogy(N16_array, E_2D16p1, '.-', label=r'10\%')
 plt.semilogy(N16_array, E_2D16p5, 's-', color=red, label=r'50\% pert.~1:16')
-mpl.rcParams['markers.fillstyle'] = 'full'
+plt.rcParams['markers.fillstyle'] = 'full'
 plt.minorticks_off()
 plt.xticks(N_array, N_array)
 plt.ylim(top = 5*plt.ylim()[1])
@@ -187,6 +190,7 @@ plt.ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 plt.title('Dirichlet BCs')
 
 # plot the intra-step order of convergence for Dirichlet BCs
+plt.rcParams['lines.linewidth'] = dashed_linewidth
 axR2 = axR1.twinx()
 logN = np.log2(NX_array)
 logN16 = np.log2(np.array([ 2,  4,  8, 16, 32, 64]))
@@ -204,15 +208,15 @@ order_2D16p1 = (logE_2D16p1[0:-1] - logE_2D16p1[1:])/(logN16[1:] - logN16[0:-1])
 order_2D16p5 = (logE_2D16p5[0:-1] - logE_2D16p5[1:])/(logN16[1:] - logN16[0:-1])
 # intraN = np.logspace(start+0.5, stop-0.5, num=stop-start, base=2.0)**2
 intraN = np.arange(2*start + 1, 2*stop, 2)
-plt.plot(plt.xlim(), [2, 2], 'k:', linewidth=1, label='Expected')
-plt.plot(intraN, order_2Du, 'o:', linewidth=1, color=blue, label=r'uniform order')
-# plt.plot(intraN, order_2Dp1, '.:', linewidth=1, label=r'10% order')
-plt.plot(intraN, order_2Dp5, 's:', linewidth=1, color=red, label=r'50% order')
-mpl.rcParams['markers.fillstyle'] = 'none'
-plt.plot(intraN[1:], order_2D16u, 'o:', linewidth=1, label=r'uniform order')
-# plt.plot(intraN[1:], order_2D16p1, '.:', linewidth=1, label=r'10% order')
-plt.plot(intraN[1:], order_2D16p5, 's:', linewidth=1, color=red, label=r'50% order')
-mpl.rcParams['markers.fillstyle'] = 'full'
+plt.plot(plt.xlim(), [2, 2], ':k', label='Expected')
+plt.plot(intraN, order_2Du, 'o:', color=blue, label=r'uniform order')
+# plt.plot(intraN, order_2Dp1, '.:', label=r'10% order')
+plt.plot(intraN, order_2Dp5, 's:', color=red, label=r'50% order')
+plt.rcParams['markers.fillstyle'] = 'none'
+plt.plot(intraN[1:], order_2D16u, 'o:', label=r'uniform order')
+# plt.plot(intraN[1:], order_2D16p1, '.:', label=r'10% order')
+plt.plot(intraN[1:], order_2D16p5, 's:', color=red, label=r'50% order')
+plt.rcParams['markers.fillstyle'] = 'full'
 plt.ylim(0, 4)
 plt.yticks(np.linspace(0,4,5))
 plt.ylabel(r'Intra-step Order of Convergence')
@@ -220,6 +224,6 @@ lines, labels = axR1.get_legend_handles_labels()
 axR2.legend(lines, labels, loc='best')
 # lines2, labels2 = axR2.get_legend_handles_labels()
 # axR2.legend(lines + lines2, labels + labels2, loc='best')
-plt.margins(0,0)
 
+plt.margins(0,0)
 # plt.savefig('L2_conv.pdf', bbox_inches = 'tight', pad_inches = 0)

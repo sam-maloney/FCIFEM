@@ -12,14 +12,14 @@ import matplotlib.pyplot as plt
 import scipy.sparse as sp
 import scipy.sparse.linalg as sp_la
 
-import fcifem
-# import fcifem_periodic as fcifem
+# import fcifem
+import fcifem_periodic as fcifem
 
 from timeit import default_timer
 
 # mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
-mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
-# mapping = fcifem.mappings.StraightMapping()
+# mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
+mapping = fcifem.mappings.StraightMapping()
 
 class slantedTestProblem:
     n = 10
@@ -43,29 +43,34 @@ class slantedTestProblem:
         return self.A*np.sin(n2pyx) + self.B*np.sin(_2py)*np.sin(n2pyx) \
                                     + self.C*np.cos(_2py)*np.cos(n2pyx)
         
+class sinXsinY:
+    solution_factor = 1 / (1 + 4*np.pi**2)
+    
+    def __call__(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        return np.sin(x)*np.sin(2*np.pi*y)
+    
+    def solution(self, p):
+        return self.solution_factor * self(p)
+
 f = slantedTestProblem()
+# f = sinXsinY()
 uExactFunc = f.solution
 
-# ##### standard isotropic test problem
-# def f(p):
-#     x = p.reshape(-1,2)[:,0]
-#     y = p.reshape(-1,2)[:,1]
-#     return np.sin(x)*np.sin(2*np.pi*y)
-
-# uExactFunc = lambda p : (1/(1+4*np.pi**2))*f(p)
 
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.,
-    'py' : 0.,
+    'px' : 0.1,
+    'py' : 0.1,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 1
-stop = 3
+start = 2
+stop = 8
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -81,15 +86,15 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    NY = 16*NX
+    NY = NX
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
     ##### These require the fcifem_periodic version of the module #####
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
+    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
     
@@ -98,7 +103,7 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
     
     # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
+    sim.computeSpatialDiscretization(f, NQX=2, NQY=NY, Qord=3, quadType='g',
                                      massLumping=False)
     
     try:
@@ -169,7 +174,8 @@ for iN, NX in enumerate(NX_array):
 #%% Plotting
 
 # clear the current figure, if opened, and set parameters
-fig = plt.gcf()
+# fig = plt.gcf()
+fig = plt.figure()
 fig.clf()
 fig.set_size_inches(7.75,3)
 plt.subplots_adjust(hspace = 0.3, wspace = 0.3)

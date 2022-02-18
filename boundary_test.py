@@ -16,15 +16,15 @@ import fcifem
 
 from timeit import default_timer
 
-# ##### standard isotropic and periodic test problem
-# class sinXsinY:
-#     def __call__(self, p):
-#         x = p.reshape(-1,2)[:,0]
-#         y = p.reshape(-1,2)[:,1]
-#         return np.sin(x)*np.sin(2*np.pi*y)
+##### standard isotropic and periodic test problem
+class sinXsinY:
+    def __call__(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        return np.sin(x)*np.sin(2*np.pi*y)
     
-#     def solution(self, p):
-#         return (1 / (1 + 4*np.pi**2)) * self(p)
+    def solution(self, p):
+        return (1 / (1 + 4*np.pi**2)) * self(p)
 
 class TestProblem:
     xmax = 2*np.pi
@@ -65,7 +65,7 @@ class linearPatch():
 
 class QuadraticTestProblem:
     xmax = 2*np.pi
-    n = 2
+    n = 3
     # a = 0.01
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
@@ -192,7 +192,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 1
+stop = 4
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -208,11 +208,11 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    NQX = 1
-    NY = 10*NX
-    # NY = NX
+    # NQX = 1
+    # NY = 10*NX
+    NY = 16*NX
     # NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
-    # NQX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
+    NQX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
     NQY = NY
 
     # initialize simulation class
@@ -220,7 +220,7 @@ for iN, NX in enumerate(NX_array):
     
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
     # BC = fcifem.boundaries.DirichletXPeriodicYBoundary(sim, f.solution)
-    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=None)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=0)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
     
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
@@ -232,7 +232,8 @@ for iN, NX in enumerate(NX_array):
     #     Qord = 1
     Qord = 2
     
-    vci = None
+    vci = 'VCI-C'
+    # vci = None
     if (vci == 'VCI'):
         sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     elif (vci == 'VCI-C'):
@@ -308,10 +309,10 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-                      ,cmap='seismic', vmin=vmin, vmax=vmax)
+# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+#                       ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.X, sim.Y, F, shading='gouraud')
-# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 # x = np.linspace(0, sim.nodeX[-1], 100)
 # # for yi in [0.0, 0.1, 0.2]:
 # for yi in [sim.mapping(np.array((x, 0.5)), 0.) for x in sim.nodeX]:
@@ -375,26 +376,26 @@ if (vci is not None):
 # plt.sca(ax1)
 # plt.savefig(filename + '.pdf', bbox_inches = 'tight', pad_inches = 0)
 
-#### Plot the quadrature points #####
-from scipy.special import roots_legendre
-for iPlane in range(NX):
-    dx = sim.dx[iPlane]
-    ##### generate quadrature points
-    if sim.quadType.lower() in ('gauss', 'g', 'gaussian'):
-        offsets, weights = roots_legendre(Qord)
-    elif sim.quadType.lower() in ('uniform', 'u'):
-        offsets = np.linspace(1/Qord - 1, 1 - 1/Qord, Qord)
-        weights = np.repeat(2/Qord, Qord)
-    offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
-    weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
-    quads = ( np.indices([NQX, NQY], dtype='float').T.
-              reshape(-1, sim.ndim) + 0.5 ) * [dx/NQX, 1/NQY]
-    quadWeights = np.repeat(1., len(quads))
-    for i in range(sim.ndim):
-        quads = np.concatenate( 
-            [quads + offset*np.eye(sim.ndim)[i] for offset in offsets[i]] )
-        quadWeights = np.concatenate(
-            [quadWeights * weight for weight in weights[i]] )
+# #### Plot the quadrature points #####
+# from scipy.special import roots_legendre
+# for iPlane in range(NX):
+#     dx = sim.dx[iPlane]
+#     ##### generate quadrature points
+#     if sim.quadType.lower() in ('gauss', 'g', 'gaussian'):
+#         offsets, weights = roots_legendre(Qord)
+#     elif sim.quadType.lower() in ('uniform', 'u'):
+#         offsets = np.linspace(1/Qord - 1, 1 - 1/Qord, Qord)
+#         weights = np.repeat(2/Qord, Qord)
+#     offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
+#     weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
+#     quads = ( np.indices([NQX, NQY], dtype='float').T.
+#               reshape(-1, sim.ndim) + 0.5 ) * [dx/NQX, 1/NQY]
+#     quadWeights = np.repeat(1., len(quads))
+#     for i in range(sim.ndim):
+#         quads = np.concatenate( 
+#             [quads + offset*np.eye(sim.ndim)[i] for offset in offsets[i]] )
+#         quadWeights = np.concatenate(
+#             [quadWeights * weight for weight in weights[i]] )
     
-    quads += [sim.nodeX[iPlane], 0]
-    ax1.plot(quads[:,0], quads[:,1], 'k+')
+#     quads += [sim.nodeX[iPlane], 0]
+#     ax1.plot(quads[:,0], quads[:,1], 'k+')

@@ -601,10 +601,10 @@ class FciFemSim:
                 quadWeight = quadWeights[iQ]               
                 self.u_weights[indices] += quadWeight * phis
                 
-                disps = np.array(((quad[0][0] - nodeX,  quad[0][1] - self.nodeY[iPlane][indL[iQ]]),
-                                  (quad[0][0] - nodeX,  quad[0][1] - self.nodeY[iPlane][indL[iQ]+1]),
-                                  (quad[0][0] - nodeX1, quad[0][1] - self.nodeY[iPlane+1][indR[iQ]]),
-                                  (quad[0][0] - nodeX1, quad[0][1] - self.nodeY[iPlane+1][indR[iQ]+1])))
+                disps = np.array(((quad[0] - nodeX,  quad[1] - self.nodeY[iPlane][indL[iQ]]),
+                                  (quad[0] - nodeX,  quad[1] - self.nodeY[iPlane][indL[iQ]+1]),
+                                  (quad[0] - nodeX1, quad[1] - self.nodeY[iPlane+1][indR[iQ]]),
+                                  (quad[0] - nodeX1, quad[1] - self.nodeY[iPlane+1][indR[iQ]+1])))
                 
                 self.store.append((indices, gradphis, disps, quadWeight))
                 P = np.hstack((np.ones((len(indices), 1)), disps))
@@ -768,9 +768,9 @@ class FciFemSim:
                                     (indR[iQ] + NY*(iPlane+1)) % nDoFs,
                                     ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nDoFs))
                 quadWeight = quadWeights[iQ]
-                yCell = int(quad[0,1]*NQY)
+                yCell = int(quad[1]*NQY)
                 cellCentre = np.array((nodeX + 0.5*dx, (yCell + 0.5)/NQY))
-                disp = quad[0] - cellCentre
+                disp = quad - cellCentre
                 cellId = iPlane*NY + yCell
                 self.store.append((indices, phis, gradphis, quadWeight, quad, cellId, disp))
                 
@@ -1033,7 +1033,7 @@ class FciFemSim:
                                     (indR[iQ] + NY*(iPlane+1)) % nDoFs,
                                     ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nDoFs])
                 quadWeight = quadWeights[iQ]
-                cellId = iPlane*NQX*NQY + NQX*int(quad[0,1]*NQY) + int((quad[0,0]-nodeX)*iqdx)
+                cellId = iPlane*NQX*NQY + NQX*int(quad[1]*NQY) + int((quad[0]-nodeX)*iqdx)
                 self.store.append((indices, phis, gradphis, quadWeight, quad, cellId))
                 
                 gd[index:index+8] = gradphis.T.ravel()
@@ -1228,14 +1228,38 @@ class FciFemSim:
         ri[index:index+(nQuads * NX)] = 2*nDoFs
         ci[index:index+(nQuads * NX)] = np.arange(nQuads * NX)
     
-        self.G = sp.csr_matrix((gd, (ri, ci)), shape=(2*nDoFs+1, nQuads * NX))
-        rhs = np.concatenate((self.gradphiSums.T.ravel(), np.zeros(1)))
-        v0 = np.zeros(nQuads * NX)
-        maxit = nQuads * NX
-        # tol = np.finfo(float).eps
-        tol = 1e-10
-        # self.xi = sp_la.lsmr(self.G, rhs, x0=v0, atol=tol, btol=tol, maxiter=maxit)
-        self.xi = sp_la.lsqr(self.G, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
+        ##### Using SuiteSparse QR decomposition #####
+        # Form the transpose of G (i.e. ri and ci intentionally swapped)
+        # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
+        self.G = sp.csc_matrix((gd[:index], (ci[:index], ri[:index])),
+                      shape=(np.iinfo('int32').max + 1, 2*nDoFs+1))
+        self.G._shape = (nQuads * NX, 2*nDoFs+1)
+        del gd, ci, ri, offsets, weights, quads, quadWeights
+        QR, r = ssqr.QR_C(self.G, tol=ssqr.SPQR_DEFAULT_TOL)
+        if r == -1:
+            raise SystemExit("Error in QR decomposition")
+        try:
+            QR.E[0][0]
+            E = np.frombuffer(QR.E[0], dtype=np.int64, count=r)
+            rhs = np.append(self.gradphiSums.T.ravel(), 0.)[E]
+        except:
+            rhs = np.append(self.gradphiSums.T.ravel(), 0.)[:r]
+        R = ssqr.cholmodSparseToScipyCsc(QR.R)
+        x = np.empty(nQuads * NX)
+        x[:r] = sp_la.spsolve_triangular(R.T[:r,:r], rhs, lower=True,
+                                          overwrite_A=True, overwrite_b=True)
+        x[r:] = 0.
+        self.xi = (ssqr.qmult(QR, x), r)
+    
+        # ##### Using scipy.sparse.linalg, much slower, uses less memory #####
+        # self.G = sp.csr_matrix((gd, (ri, ci)), shape=(2*nDoFs+1, nQuads * NX))
+        # rhs = np.concatenate((self.gradphiSums.T.ravel(), np.zeros(1)))
+        # v0 = np.zeros(nQuads * NX)
+        # maxit = nQuads * NX
+        # # tol = np.finfo(float).eps
+        # tol = 1e-10
+        # # self.xi = sp_la.lsmr(self.G, rhs, x0=v0, atol=tol, btol=tol, maxiter=maxit)
+        # self.xi = sp_la.lsqr(self.G, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
                 
         index = 0
         for iQ, (indices, phis, gradphis, quadWeight, quad) in enumerate(self.store):

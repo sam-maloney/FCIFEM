@@ -279,8 +279,8 @@ class FciFemSim:
                         if j < 0: # j is boundary node
                             ##### Not sure if this can/should always be uncommented? #####
                             ##### Needed for projection; but does it affect Poisson/CD #####
-                            self.b[i] -= quadWeights[iQ] * (
-                                phis[alpha] * phis[beta] )
+                            # self.b[i] -= quadWeights[iQ] * (
+                            #     phis[alpha] * phis[beta] )
                             self.b[i] -= quadWeights[iQ] * (
                                 (gradphis[alpha] @ self.velocity) * phis[beta] +
                                 (gradphis[alpha] @ (self.diffusivity @ gradphis[beta])) )
@@ -643,32 +643,32 @@ class FciFemSim:
             self.gradphiSums = self.rOld[:nDoFs,:,0]
             nConstraints = 2*nDoFs + 1
         
-        # ##### Using SuiteSparse QR decomposition #####
-        # # Form the transpose of G (i.e. ri and ci intentionally swapped)
-        # # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
-        # self.G = sp.csc_matrix((gd[:index], (ci[:index], ri[:index])),
-        #               shape=(np.iinfo('int32').max + 1, nConstraints))
-        # self.G._shape = (nQuads * NX, nConstraints)
-        # del gd, ci, ri, offsets, weights, quads, quadWeights
-        # start_time = default_timer()
-        # QR, r = ssqr.QR_C(self.G, tol=ssqr.SPQR_DEFAULT_TOL)
-        # if r == -1:
-        #     raise SystemExit("Error in QR decomposition")
-        # try:
-        #     QR.E[0][0]
-        #     E = np.frombuffer(QR.E[0], dtype=np.int64, count=r)
-        #     rhs = np.append(self.gradphiSums.T.ravel(), 0.)[E]
-        # except:
-        #     rhs = np.append(self.gradphiSums.T.ravel(), 0.)[:r]
-        # R = ssqr.cholmodSparseToScipyCsc(QR.R)
-        # x = np.empty(nQuads * NX)
-        # x[:r] = sp_la.spsolve_triangular(R.T[:r,:r], rhs, lower=True,
-        #                                   overwrite_A=True, overwrite_b=True)
-        # x[r:] = 0.
-        # self.xi = (ssqr.qmult(QR, x), r)
-        # print(f'xi solve time = {default_timer()-start_time} s')
+        ##### Using SuiteSparse QR decomposition #####
+        # Form the transpose of G (i.e. ri and ci intentionally swapped)
+        # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
+        self.G = sp.csc_matrix((gd[:index], (ci[:index], ri[:index])),
+                      shape=(np.iinfo('int32').max + 1, nConstraints))
+        self.G._shape = (nQuads * NX, nConstraints)
+        del gd, ci, ri, offsets, weights, quads, quadWeights
+        start_time = default_timer()
+        QR, r = ssqr.QR_C(self.G, tol=ssqr.SPQR_DEFAULT_TOL)
+        if r == -1:
+            raise SystemExit("Error in QR decomposition")
+        try:
+            QR.E[0][0]
+            E = np.frombuffer(QR.E[0], dtype=np.int64, count=r)
+            rhs = np.append(self.gradphiSums.T.ravel(), 0.)[E]
+        except:
+            rhs = np.append(self.gradphiSums.T.ravel(), 0.)[:r]
+        R = ssqr.cholmodSparseToScipyCsc(QR.R)
+        x = np.empty(nQuads * NX)
+        x[:r] = sp_la.spsolve_triangular(R.T[:r,:r], rhs, lower=True,
+                                          overwrite_A=True, overwrite_b=True)
+        x[r:] = 0.
+        self.xi = (ssqr.qmult(QR, x), r)
+        print(f'xi solve time = {default_timer()-start_time} s')
 
-        # ##### Using scipy.sparse.linalg, much slower, uses less memory #####
+        # ##### Using scipy.sparse.linalg, much slower, but uses less memory #####
         # self.G = sp.csr_matrix((gd[:index], (ri[:index], ci[:index])),
         #                         shape=(nConstraints, nQuads * NX))
         # rhs = np.append(self.gradphiSums.T.ravel(), 0.)
@@ -681,23 +681,23 @@ class FciFemSim:
         # self.xi = sp_la.lsqr(self.G, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
         # print(f'xi solve time = {default_timer()-start_time} s')
         
-        ##### Using scipy.optimize.lsq_linear #####
-        ##### VERY slow, but guarantees non-negative quadWeights #####
-        from scipy.optimize import lsq_linear
-        self.G = sp.csr_matrix((gd[:index], (ri[:index], ci[:index])),
-                                shape=(nConstraints, nQuads * NX))
-        rhs = np.append(self.gradphiSums.T.ravel(), 0.)
-        maxit = nQuads * NX
-        tol = 1e-10
-        self.xi = lsq_linear(self.G, rhs, (bounds,np.inf), max_iter=100,
-                             tol=tol)
+        # ##### Using scipy.optimize.lsq_linear #####
+        # ##### VERY SLOW, but guarantees non-negative quadWeights #####
+        # from scipy.optimize import lsq_linear
+        # self.G = sp.csr_matrix((gd[:index], (ri[:index], ci[:index])),
+        #                         shape=(nConstraints, nQuads * NX))
+        # rhs = np.append(self.gradphiSums.T.ravel(), 0.)
+        # maxit = nQuads * NX
+        # tol = 1e-10
+        # self.xi = lsq_linear(self.G, rhs, (bounds,np.inf), max_iter=100,
+        #                      tol=tol)
         
         self.rNew = np.zeros((nNodes, self.ndim, 3))
         
         index = 0
         for iQ, (inds, phis, gradphis, quadWeight, quad) in enumerate(self.store):
-            # quadWeight += self.xi[0][iQ]
-            quadWeight += self.xi.x[iQ]
+            quadWeight += self.xi[0][iQ]
+            # quadWeight += self.xi.x[iQ]
             if f is not None:
                 fq = f(quad)
             for alpha, i in enumerate(inds):
