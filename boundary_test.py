@@ -65,7 +65,7 @@ class linearPatch():
 
 class QuadraticTestProblem:
     xmax = 2*np.pi
-    n = 3
+    n = 1
     # a = 0.01
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
@@ -180,7 +180,7 @@ mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
 
 #%%
-perturbation = 0.1
+perturbation = 0.
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
@@ -192,7 +192,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 4
+stop = 1
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -208,11 +208,11 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    # NQX = 1
-    # NY = 10*NX
-    NY = 16*NX
+    NQX = 1
+    # NY = 16*NX
+    NY = NX
     # NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
-    NQX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
+    # NQX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
     NQY = NY
 
     # initialize simulation class
@@ -220,7 +220,7 @@ for iN, NX in enumerate(NX_array):
     
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
     # BC = fcifem.boundaries.DirichletXPeriodicYBoundary(sim, f.solution)
-    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=0)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=1)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
     
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')

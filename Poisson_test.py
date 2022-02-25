@@ -18,8 +18,8 @@ import fcifem_periodic as fcifem
 from timeit import default_timer
 
 # mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
-# mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
-mapping = fcifem.mappings.StraightMapping()
+mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
+# mapping = fcifem.mappings.StraightMapping()
 
 class slantedTestProblem:
     n = 10
@@ -64,13 +64,13 @@ kwargs={
     'dt' : 1.,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.1,
-    'py' : 0.1,
+    'px' : 0.,
+    'py' : 0.,
     'seed' : 42 }
 
 # allocate arrays for convergence testing
-start = 2
-stop = 8
+start = 5
+stop = 5
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -191,8 +191,8 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-# sim.generatePlottingPoints(nx=5, ny=5)
-sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
+sim.generatePlottingPoints(nx=5, ny=5)
+# sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
@@ -206,11 +206,11 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-#                      ,cmap='seismic', vmin=vmin, vmax=vmax)
+field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+                       ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.DoFs[:,0], sim.DoFs[:,1], sim.u - uExact
 #                     ,shading='gouraud', cmap='seismic', vmin=vmin, vmax=vmax)
-field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.4, 0.5, 0.6]:
     try:

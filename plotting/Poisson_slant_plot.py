@@ -230,39 +230,36 @@ t_solve_16N_lin_p1 = np.array([3.44238999e-03, 2.27093940e-02, 4.32864720e-02, 1
 solid_linewidth = 1.25
 dashed_linewidth = 1.0
 
-plt.rcParams['markers.fillstyle'] = 'full'
-plt.rcParams['lines.markersize'] = 5.0
-plt.rcParams['lines.linewidth'] = solid_linewidth
-plt.rcParams['pdf.fonttype'] = 42
-plt.rcParams['text.usetex'] = True
+plt.rc('markers', fillstyle='full')
+plt.rc('lines', markersize=5.0, linewidth=solid_linewidth)
+plt.rc('pdf', fonttype=42)
+plt.rc('text', usetex=True)
 # fontsize : int or {'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'}
-plt.rcParams['legend.fontsize'] = 'small'
-# plt.rcParams['font.size'] = 'small'
-# plt.rcParams['axes.titlesize'] = 'medium'
-# plt.rcParams['axes.labelsize'] = 'medium'
-# plt.rcParams['xtick.labelsize'] = 'small'
-# plt.rcParams['ytick.labelsize'] = 'small'
-# plt.rcParams['figure.titlesize'] = 'large'
+# plt.rc('font', size='small')
+plt.rc('legend', fontsize='small')
+# plt.rc('axes', titlesize='medium', labelsize='medium')
+# plt.rc('xtick', labelsize='small')
+# plt.rc('ytick', labelsize='small')
+# plt.rc('figure', titlesize='large')
 
 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-blue = colors[0]
-orange = colors[1]
-green = colors[2]
-red = colors[3]
-purple = colors[4]
-brown = colors[5]
-pink = colors[6]
-grey = colors[7]
-yellow = colors[8]
-cyan = colors[9]
+blue = '#1f77b4'
+orange = '#ff7f0e'
+green = '#2ca02c'
+red = '#d62728'
+purple = '#9467bd'
+brown = '#8c564b'
+pink = '#e377c2'
+grey = '#7f7f7f'
+yellow = '#bcbd22'
+cyan = '#17becf'
+black = '#000000'
 
 # clear the current figure, if opened, and set parameters
-fig = plt.figure()
-fig.clf()
-fig.set_size_inches(7.75,3)
-plt.subplots_adjust(hspace = 0.5, wspace = 0.5)
-# fig.set_size_inches(3.875,3)
-# plt.subplots_adjust(left = 0.2, right = 0.85)
+fig = plt.figure(figsize=(7.75, 3))
+fig.subplots_adjust(hspace=0.5, wspace=0.5)
+# fig = plt.figure(figsize=(3.875, 3))
+# fig.subplots_adjust(left=0.2, right=0.85)
 
 axL1 = plt.subplot(121)
 N_1N_str = np.log2(NX_1N_str*NY_1N_str).astype('int')
@@ -308,4 +305,4 @@ axR1.legend()
 # axR1.legend(loc='lower right')
 
 # plt.margins(0,0)
-plt.savefig("Poisson_slant.pdf", bbox_inches = 'tight', pad_inches = 0)
+fig.savefig("Poisson_slant.pdf", bbox_inches = 'tight', pad_inches = 0)

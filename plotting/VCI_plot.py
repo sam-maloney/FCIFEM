@@ -140,138 +140,123 @@ t_solve_p1_sin10 = np.array([7.80342962e-04, 2.45964801e-03, 4.99731995e-03, 1.1
 solid_linewidth = 1.25
 dashed_linewidth = 1.0
 
-plt.rcParams['markers.fillstyle'] = 'full'
-plt.rcParams['lines.markersize'] = 5.0
-plt.rcParams['lines.linewidth'] = solid_linewidth
-plt.rcParams['pdf.fonttype'] = 42
-plt.rcParams['text.usetex'] = True
+plt.rc('markers', fillstyle='full')
+plt.rc('lines', markersize=5.0, linewidth=solid_linewidth)
+plt.rc('pdf', fonttype=42)
+plt.rc('text', usetex=True)
 # fontsize : int or {'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'}
-plt.rcParams['legend.fontsize'] = 'small'
-# plt.rcParams['font.size'] = 'small'
-# plt.rcParams['axes.titlesize'] = 'medium'
-# plt.rcParams['axes.labelsize'] = 'medium'
-# plt.rcParams['xtick.labelsize'] = 'small'
-# plt.rcParams['ytick.labelsize'] = 'small'
-# plt.rcParams['figure.titlesize'] = 'large'
+# plt.rc('font', size='small')
+plt.rc('legend', fontsize='small')
+# plt.rc('axes', titlesize='medium', labelsize='medium')
+# plt.rc('xtick', labelsize='small')
+# plt.rc('ytick', labelsize='small')
+# plt.rc('figure', titlesize='large')
 
 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-blue = colors[0]
-orange = colors[1]
-green = colors[2]
-red = colors[3]
-purple = colors[4]
-brown = colors[5]
-pink = colors[6]
-grey = colors[7]
-yellow = colors[8]
-cyan = colors[9]
+blue = '#1f77b4'
+orange = '#ff7f0e'
+green = '#2ca02c'
+red = '#d62728'
+purple = '#9467bd'
+brown = '#8c564b'
+pink = '#e377c2'
+grey = '#7f7f7f'
+yellow = '#bcbd22'
+cyan = '#17becf'
+black = '#000000'
 
 # clear the current figure, if opened, and set parameters
-fig = plt.figure()
-fig.clf()
-fig.set_size_inches(7.75,3)
-plt.subplots_adjust(hspace = 0.5, wspace = 0.5)
+fig = plt.figure(figsize=(7.75, 3))
+fig.subplots_adjust(hspace=0.5, wspace=0.5)
+axL1, axR1 = fig.subplots(1, 2)
 
-axL1 = plt.subplot(121)
 N_array = np.log2(NX_array**2).astype('int')
-# plt.semilogy(N_array, E_2_u_str, '.-', label=r'Str/Uniform')
-plt.semilogy(N_array, E_2_u_sin, 'o-', color=blue, label=r'Uniform')
-# plt.semilogy(N_array, E_2_p1_str, '.-', label=r'Str/10% pert')
-plt.semilogy(N_array, E_2_p1_sin, 's-', color=red, label=r'10\% perturbation')
-plt.minorticks_off()
-# plt.ylim(top=1.5e-2)
-plt.xticks(N_array, N_array)
-plt.xlabel(r'$\log_2(N_xN_y)$')
-plt.ylabel(r'$|E_2|$', rotation=0, labelpad=10)
-# plt.title('Uniform vs. Perturbed Grid')
+# axL1.semilogy(N_array, E_2_u_str, '.-', label=r'Str/Uniform')
+axL1.semilogy(N_array, E_2_u_sin, 'o-', color=blue, label=r'Uniform')
+# axL1.semilogy(N_array, E_2_p1_str, '.-', label=r'Str/10% pert')
+axL1.semilogy(N_array, E_2_p1_sin, 's-', color=red, label=r'10\% perturbation')
+axL1.minorticks_off()
+axL1.set_xticks(N_array)
+axL1.set_xlabel(r'$\log_2(N_xN_y)$')
+axL1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 
 # plot the intra-step order of convergence
-plt.rcParams['lines.linewidth'] = dashed_linewidth
+plt.rc('lines', linewidth=dashed_linewidth)
 axL2 = axL1.twinx()
 logN = np.log(NX_array)
-plt.autoscale(False)
-plt.plot(plt.xlim(), [2, 2], ':k', label='Expected ord')
-# intraN = np.logspace(start+0.5, stop-0.5, num=stop-start, base=2.0)
+axL2.axhline(2, linestyle=':', color=black, label='Expected order')
 intraN = np.arange(2*start + 1, 2*stop, 2)
 # logE_str = np.log(E_2_u_str)
 # order_str = (logE_str[0:-1] - logE_str[1:])/(logN[1:] - logN[0:-1])
-# plt.plot(intraN, order_str, '.:', label=r'Str/Uniform order')
+# axL2.plot(intraN, order_str, '.:', label=r'Str/Uniform order')
 logE_sin = np.log(E_2_u_sin)
 order_sin = (logE_sin[0:-1] - logE_sin[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_sin, 'o:', color=blue, label=r'Uniform order')
+axL2.plot(intraN, order_sin, 'o:', color=blue, label=r'Uniform order')
 # logE_p1_str = np.log(E_2_p1_str)
 # order_p1_str = (logE_p1_str[0:-1] - logE_p1_str[1:])/(logN[1:] - logN[0:-1])
-# plt.plot(intraN, order_p1_str, '.:', label=r'Str/10% pert order')
+# axL2.plot(intraN, order_p1_str, '.:', label=r'Str/10% pert order')
 logE_p1_sin = np.log(E_2_p1_sin)
 order_p1_sin = (logE_p1_sin[0:-1] - logE_p1_sin[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_sin, 's:', color=red, label=r'10\% pert order')
+axL2.plot(intraN, order_p1_sin, 's:', color=red, label=r'10\% pert order')
 
 ordb = 0
 ordt = 2.5
-plt.ylim(ordb, ordt)
-# plt.yticks(np.linspace(ordb, ordt, ordt - ordb + 1)) # unit spacing
-plt.yticks(np.linspace(ordb, ordt, int((ordt - ordb)*2 + 1))) # 0.5 spacing
-plt.ylabel(r'Intra-step Order of Convergence')
+ordstep = 0.5
+axL2.set_ylim(ordb, ordt)
+axL2.set_yticks(np.linspace(ordb, ordt, (ordt - ordb)/ordstep + 1))
+axL2.set_ylabel(r'Intra-step Order of Convergence')
 lines, labels = axL1.get_legend_handles_labels()
-lines2, labels2 = axL2.get_legend_handles_labels()
-leg = axL2.legend(lines, labels, loc='lower left')
-# leg = axL2.legend(lines + lines2, labels + labels2, loc='best')
-# leg = axL2.legend(lines + [lines2[-1]], labels + [labels2[-1]], loc='lower left')
-plt.margins(0,0)
+axL2.legend(lines, labels, loc='lower left')
 
 # plot the error convergence
-plt.rcParams['lines.linewidth'] = solid_linewidth
-axR1 = plt.subplot(122)
-plt.autoscale(True)
-# plt.semilogy(N_array, E_2_p1_sin, '.-', label=r'Q3')
-plt.semilogy(N_array, E_2_p1_sin10, 'o-', color=blue, label=r'Q10')
-plt.semilogy(N_array, E_2_p1_sin_L, 's-', color=red, label=r'Q3 VC1')
-plt.semilogy(N_array, E_2_p1_sin_Q, '^-', color=orange, label=r'Q3 VC2')
-plt.semilogy(N_array, E_2_p1_sin_CP, 'd-k', label=r'Q3 VC1-C')
-plt.minorticks_off()
-# plt.ylim(top=1.5e-2)
-plt.xticks(N_array, N_array)
-plt.xlabel(r'$\log_2(N_xN_y)$')
-plt.ylabel(r'$|E_2|$', rotation=0, labelpad=10)
-# plt.title(r'Improved Quadrature')
+plt.rc('lines', linewidth=solid_linewidth)
+# axR1.semilogy(N_array, E_2_p1_sin, '.-', label=r'Q3')
+axR1.semilogy(N_array, E_2_p1_sin10, 'o-', color=blue, label=r'Q10')
+# axR1.semilogy(N_array, E_2_p1_sin_L, 's-', color=red, label=r'Q3 VC1')
+axR1.semilogy(N_array, E_2_p1_sin_Q, 's-', color=red, label=r'Q3 VC2')
+axR1.semilogy(N_array, E_2_p1_sin_CP, 'd-k', label=r'Q3 VC1-C')
+axR1.minorticks_off()
+axR1.set_xticks(N_array)
+axR1.set_xlabel(r'$\log_2(N_xN_y)$')
+axR1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 
 # plot the intra-step order of convergence
-plt.rcParams['lines.linewidth'] = dashed_linewidth
+plt.rc('lines', linewidth=dashed_linewidth)
 axR2 = axR1.twinx()
 logN = np.log(NX_array)
-plt.plot(plt.xlim(), [2, 2], ':k', label='Expected ord')
+axR2.axhline(2, linestyle=':', color=black, label='Expected order')
 # logE_p1_sin = np.log(E_2_p1_sin)
 # order_p1_sin = (logE_p1_sin[0:-1] - logE_p1_sin[1:])/(logN[1:] - logN[0:-1])
-# plt.plot(intraN, order_p1_sin, '.:', label=r'Q3 order')
+# axR2.plot(intraN, order_p1_sin, '.:', label=r'Q3 order')
 logE_sin10 = np.log(E_2_p1_sin10)
 order_sin10 = (logE_sin10[0:-1] - logE_sin10[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_sin10, 'o:', color=blue, label=r'Q10 order')
-logE_p1_sin_L = np.log(E_2_p1_sin_L)
-order_p1_sin_L = (logE_p1_sin_L[0:-1] - logE_p1_sin_L[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_sin_L, 's:', color=red, label=r'Q3 VC1 order')
+axR2.plot(intraN, order_sin10, 'o:', color=blue, label=r'Q10 order')
+# logE_p1_sin_L = np.log(E_2_p1_sin_L)
+# order_p1_sin_L = (logE_p1_sin_L[0:-1] - logE_p1_sin_L[1:])/(logN[1:] - logN[0:-1])
+# axR2.plot(intraN, order_p1_sin_L, 's:', color=red, label=r'Q3 VC1 order')
 logE_p1_sin_Q = np.log(E_2_p1_sin_Q)
 order_p1_sin_Q = (logE_p1_sin_Q[0:-1] - logE_p1_sin_Q[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_sin_Q, '^:', color=orange, label=r'Q3 VC2 order')
+axR2.plot(intraN, order_p1_sin_Q, 's:', color=red, label=r'Q3 VC2 order')
 logE_p1_sin_CP = np.log(E_2_p1_sin_CP)
 order_p1_sin_CP = (logE_p1_sin_CP[0:-1] - logE_p1_sin_CP[1:])/(logN[1:] - logN[0:-1])
-plt.plot(intraN, order_p1_sin_CP, 'd:k', label=r'Q3 VC1-C order')
+axR2.plot(intraN, order_p1_sin_CP, 'd:k', label=r'Q3 VC1-C order')
 
-ordb = 0
-ordt = 2.5
-plt.ylim(ordb, ordt)
-# plt.yticks(np.linspace(ordb, ordt, ordt - ordb + 1))
-plt.yticks(np.linspace(ordb, ordt, int((ordt - ordb)*2 + 1)))
-plt.ylabel(r'Intra-step Order of Convergence')
+axR2.set_ylim(ordb, ordt)
+axR2.set_yticks(np.linspace(ordb, ordt, (ordt - ordb)/ordstep + 1))
+axR2.set_ylabel(r'Intra-step Order of Convergence')
 lines, labels = axR1.get_legend_handles_labels()
-lines2, labels2 = axR2.get_legend_handles_labels()
-leg = axR2.legend(lines, labels, loc='lower left')
-# leg = axR2.legend(lines + lines2, labels + labels2, loc='best')
-# leg = axR2.legend(lines + [lines2[-1]], labels + [labels2[-1]], loc='lower left')
+axR2.legend(lines, labels, loc='lower left')
 
-ylimL = axL1.get_ylim()
-ylimR = axR1.get_ylim()
-axL1.set_ylim(min(ylimL[0],ylimR[0]), max(ylimL[1],ylimR[1]))
-axR1.set_ylim(min(ylimL[0],ylimR[0]), max(ylimL[1],ylimR[1]))
+# ylimL = axL1.get_ylim()
+# ylimR = axR1.get_ylim()
+# axL1.set_ylim(min(ylimL[0],ylimR[0]), max(ylimL[1],ylimR[1]))
+# axR1.set_ylim(min(ylimL[0],ylimR[0]), max(ylimL[1],ylimR[1]))
 
-plt.margins(0,0)
-plt.savefig("Poisson_conv_all_VCI.pdf", bbox_inches = 'tight', pad_inches = 0)
+# top_ylim = 0.01
+# axL1.set_ylim(top=top_ylim)
+# axR1.set_ylim(top=top_ylim)
+
+axL1.set_ylim(1e-6, 1e-2)
+axR1.set_ylim(1e-6, 1e-2)
+
+# fig.savefig("Poisson_VCI_conv.pdf", bbox_inches = 'tight', pad_inches = 0)

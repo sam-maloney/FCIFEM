@@ -167,7 +167,7 @@ t_setup.append(np.array([5.21622690e-02, 2.00154594e-01, 7.91540935e-01, 3.16729
         1.29176043e+01, 5.31730653e+01, 2.14524380e+02]))
 t_solve.append(np.array([8.20793997e-04, 2.67740000e-03, 5.86735200e-03, 1.28006490e-02,
         3.72800250e-02, 4.43992867e-01, 1.44460044e+00]))
-labels.append('Straight N1')
+labels.append('unaligned 1:1')
 NX.append(np.array([  2,   4,   8,  16,  32,  64, 128]))
 NY.append(1)
 
@@ -197,7 +197,7 @@ t_setup.append(np.array([5.73019570e-02, 2.15856163e-01, 8.45253371e-01, 3.37325
        1.36826676e+01, 5.70101088e+01, 2.30978274e+02]))
 t_solve.append(np.array([7.46758000e-04, 2.70379000e-03, 5.61551200e-03, 1.23089160e-02,
        3.92049870e-02, 2.58457199e-01, 1.80637419e+00]))
-labels.append('Quadratic N1')
+labels.append('aligned 1:1')
 NX.append(np.array([  2,   4,   8,  16,  32,  64, 128]))
 NY.append(1)
 
@@ -216,21 +216,21 @@ NY.append(1)
 # NX.append(np.array([ 4,  8, 16, 32, 64]))
 # NY.append(16)
 
-##### DirichletBoundary with VCI-C, quadratic mapping (kamitaki)
-# xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
-# NY = 16*NX, NQX = NDX = 1, Qord = 3, px = py = 0.1
-# NX_array = np.array([ 2,  4,  8, 16, 32, 64])
-E_2.append(np.array([9.04406032e-01, 1.10654007e+00, 8.46734396e-01, 3.00802309e-01,
-       8.33548295e-02, 2.10124921e-02]))
-E_inf.append(np.array([2.29383407e+00, 3.09260827e+00, 3.06488059e+00, 1.46121208e+00,
-       7.23046191e-01, 1.70706879e-01]))
-t_setup.append(np.array([1.99390257e-01, 8.02651423e-01, 3.28052474e+00, 1.34559532e+01,
-       5.57998046e+01, 2.29369243e+02]))
-t_solve.append(np.array([3.66800200e-03, 1.95079540e-02, 4.51270550e-02, 1.52930891e-01,
-       7.09913679e+00, 3.64055848e+01]))
-labels.append('Quadratic N16')
-NX.append(np.array([ 2,  4,  8, 16, 32, 64]))
-NY.append(16)
+# ##### DirichletBoundary with VCI-C, quadratic mapping (kamitaki)
+# # xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
+# # NY = 16*NX, NQX = NDX = 1, Qord = 3, px = py = 0.1
+# # NX_array = np.array([ 2,  4,  8, 16, 32, 64])
+# E_2.append(np.array([9.04406032e-01, 1.10654007e+00, 8.46734396e-01, 3.00802309e-01,
+#        8.33548295e-02, 2.10124921e-02]))
+# E_inf.append(np.array([2.29383407e+00, 3.09260827e+00, 3.06488059e+00, 1.46121208e+00,
+#        7.23046191e-01, 1.70706879e-01]))
+# t_setup.append(np.array([1.99390257e-01, 8.02651423e-01, 3.28052474e+00, 1.34559532e+01,
+#        5.57998046e+01, 2.29369243e+02]))
+# t_solve.append(np.array([3.66800200e-03, 1.95079540e-02, 4.51270550e-02, 1.52930891e-01,
+#        7.09913679e+00, 3.64055848e+01]))
+# labels.append('aligned 1:16')
+# NX.append(np.array([ 2,  4,  8, 16, 32, 64]))
+# NY.append(16)
 
 # ##### DirichletBoundary with VCI-C, quadratic mapping (kamitaki)
 # xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
@@ -244,9 +244,102 @@ t_setup.append(np.array([2.39220765e+00, 1.03637169e+01, 3.96004280e+01, 1.70590
        1.13104444e+03]))
 t_solve.append(np.array([3.40144201e-03, 1.99636080e-02, 4.18134610e-02, 1.37417401e-01,
        1.26429747e+00]))
-labels.append('Quadratic N16 NQX27')
+labels.append('aligned 1:16')
 NX.append(np.array([ 2,  4,  8, 16, 32]))
 NY.append(16)
+
+
+# ##### DirichletBoundary with VCI-C, straight mapping (kamitaki)
+# # xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
+# # NY = NX, NQX = NDX = 1, Qord = 3, px = py = 0
+# E_2.append(np.array([8.08115186e+00, 3.72665147e+00, 9.86785032e-01, 6.37323579e-01,
+#        1.61210933e-01, 3.92152109e-02, 9.67734762e-03]))
+# E_inf.append(np.array([8.08115186e+00, 8.18852611e+00, 1.89313450e+00, 2.19517267e+00,
+#        7.07200995e-01, 1.63236606e-01, 4.09265019e-02]))
+# t_setup.append(np.array([1.50621200e-02, 5.26266400e-02, 2.08774357e-01, 8.25429726e-01,
+#        3.29292421e+00, 1.33296051e+01, 5.40369451e+01]))
+# t_solve.append(np.array([3.26427049e-04, 7.00611039e-04, 1.78198610e-03, 5.49839495e-03,
+#        1.18933690e-02, 3.58488549e-02, 2.16693861e-01]))
+# labels.append('unaligned 1:1 p0')
+# NX.append(np.array([  2,   4,   8,  16,  32,  64, 128]))
+# NY.append(1)
+
+# # ##### DirichletBoundary with VCI-C, quadratic mapping (kamitaki)
+# # xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
+# # NY = NX, NQX = NDX = 1, Qord = 3, px = py = 0
+# E_2.append(np.array([1.23062660e+01, 2.56811420e+00, 1.08685037e+00, 3.41640681e-01,
+#        9.53551345e-02, 2.38716482e-02, 5.90558368e-03]))
+# E_inf.append(np.array([1.23062660e+01, 4.90570089e+00, 3.55380195e+00, 1.41786433e+00,
+#        4.16873427e-01, 1.20788605e-01, 3.25592164e-02]))
+# t_setup.append(np.array([7.01719000e-02, 6.22038770e-02, 2.23666188e-01, 8.93053752e-01,
+#        3.61656311e+00, 1.44179926e+01, 5.89798474e+01]))
+# t_solve.append(np.array([5.37896063e-04, 8.08043987e-04, 2.43332202e-03, 5.21450106e-03,
+#        1.13294790e-02, 3.34891070e-02, 2.42105816e-01]))
+# labels.append('aligned 1:1 p0 VCI')
+# NX.append(np.array([  2,   4,   8,  16,  32,  64, 128]))
+# NY.append(1)
+
+# # ##### DirichletBoundary with VCI-C, quadratic mapping (kamitaki)
+# # xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
+# # NY = NX, NQX = 27, NDX = 1, Qord = 2, px = py = 0
+# E_2.append(np.array([1.04157832e+00, 2.81131832e+00, 1.06487916e+00, 3.00201359e-01,
+#        7.73565718e-02, 1.95348647e-02, 4.89086998e-03]))
+# E_inf.append(np.array([1.04157832e+00, 4.92405411e+00, 3.73535912e+00, 1.36492925e+00,
+#        3.35267161e-01, 9.87714046e-02, 2.57297963e-02]))
+# t_setup.append(np.array([1.60117524e-01, 6.35028111e-01, 2.61560355e+00, 1.09614467e+01,
+#        4.18999674e+01, 1.72273709e+02, 7.79217927e+02]))
+# t_solve.append(np.array([3.57345096e-04, 7.93801039e-04, 2.43592204e-03, 5.31723991e-03,
+#        1.21618269e-02, 3.71729210e-02, 2.44319313e-01]))
+# labels.append('aligned 1:1 p0 VCI overkill')
+# NX.append(np.array([  2,   4,   8,  16,  32,  64, 128]))
+# NY.append(1)
+
+# # ##### DirichletBoundary with VCI-C, quadratic mapping (kamitaki)
+# # xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
+# # NY = 16*NX, NQX = 27, NDX = 0, Qord = 2, px = py = 0
+# # NX_array = np.array([ 2,  4,  8, 16, 32])
+# E_2.append(np.array([5.53628909e-02, 3.40980201e-02, 1.05991378e-02, 4.06895722e-03,
+#        1.09249707e-03]))
+# E_inf.append(np.array([8.77044114e-02, 9.76025105e-02, 4.10355349e-02, 2.01110382e-02,
+#        8.76455114e-03]))
+# t_setup.append(np.array([2.42048703e+00, 1.04084571e+01, 3.91054562e+01, 1.87385258e+02,
+#        1.24207460e+03]))
+# t_solve.append(np.array([3.69825796e-03, 1.96817120e-02, 4.26720399e-02, 1.26188154e-01,
+#        1.32656301e+00]))
+# labels.append('aligned 1:16 p0 VCI')
+# NX.append(np.array([ 2,  4,  8, 16, 32]))
+# NY.append(16)
+
+# # ##### DirichletBoundary w/o VCI, quadratic mapping (kamitaki)
+# # xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
+# # NY = NX, NQX = NDX = 1, Qord = 3, px = py = 0
+# E_2.append(np.array([1.27961580e+01, 3.03991543e+00, 1.09957449e+00, 3.38934329e-01,
+#        9.06594149e-02, 2.24572639e-02, 5.56941407e-03]))
+# E_inf.append(np.array([1.27961580e+01, 6.18381543e+00, 3.43078279e+00, 1.40737637e+00,
+#        3.51851650e-01, 1.12552117e-01, 3.98427934e-02]))
+# t_setup.append(np.array([1.04116490e-02, 3.70237681e-02, 1.40177980e-01, 5.64224568e-01,
+#        2.16152796e+00, 8.55574941e+00, 3.40718290e+01]))
+# t_solve.append(np.array([3.52364965e-04, 7.13190995e-04, 2.38390302e-03, 4.80291096e-03,
+#        1.07442370e-02, 3.31642199e-02, 3.29797441e-01]))
+# labels.append('aligned 1:1 p0')
+# NX.append(np.array([  2,   4,   8,  16,  32,  64, 128]))
+# NY.append(1)
+
+# # ##### DirichletBoundary w/o VCI, quadratic mapping (kamitaki)
+# # xmax = 2*np.pi, n = 3, b = 0.05, a = (1 - b*xmax)/xmax**2
+# # NY = 16*NX, NQX = 27, NDX = 0, Qord = 2, px = py = 0
+# # NX_array = np.array([ 2,  4,  8, 16, 32])
+# E_2.append(np.array([4.70921487e-02, 2.47487626e-02, 1.03820632e-02, 4.54326178e-03,
+#        1.53507740e-03]))
+# E_inf.append(np.array([9.87927742e-02, 7.23447215e-02, 4.77841096e-02, 3.20981625e-02,
+#        1.35051473e-02]))
+# t_setup.append(np.array([1.50978830e+00, 6.23700205e+00, 2.51050816e+01, 1.02363948e+02,
+#        4.06790056e+02]))
+# t_solve.append(np.array([3.48745205e-03, 2.04810800e-02, 4.06128960e-02, 1.25685952e-01,
+#        1.03200645e+00]))
+# labels.append('aligned 1:16 p0')
+# NX.append(np.array([ 2,  4,  8, 16, 32]))
+# NY.append(16)
 
 
 ##### Begin Plotting Routines #####
@@ -254,68 +347,68 @@ NY.append(16)
 solid_linewidth = 1.25
 dashed_linewidth = 1.0
 
-plt.rcParams['markers.fillstyle'] = 'full'
-plt.rcParams['lines.markersize'] = 5.0
-plt.rcParams['lines.linewidth'] = solid_linewidth
-plt.rcParams['pdf.fonttype'] = 42
-plt.rcParams['text.usetex'] = True
+plt.rc('markers', fillstyle='full')
+plt.rc('lines', markersize=5.0)
+plt.rc('pdf', fonttype=42)
+plt.rc('text', usetex=True)
 # fontsize : int or {'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'}
-plt.rcParams['legend.fontsize'] = 'small'
-# plt.rcParams['font.size'] = 'small'
-# plt.rcParams['axes.titlesize'] = 'medium'
-# plt.rcParams['axes.labelsize'] = 'medium'
-# plt.rcParams['xtick.labelsize'] = 'small'
-# plt.rcParams['ytick.labelsize'] = 'small'
-# plt.rcParams['figure.titlesize'] = 'large'
+# plt.rc('font', size='small')
+plt.rc('legend', fontsize='small')
+# plt.rc('axes', titlesize='medium', labelsize='medium')
+# plt.rc('xtick', labelsize='small')
+# plt.rc('ytick', labelsize='small')
+# plt.rc('figure', titlesize='large')
 
 colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
-blue = colors[0]
-orange = colors[1]
-green = colors[2]
-red = colors[3]
-purple = colors[4]
-brown = colors[5]
-pink = colors[6]
-grey = colors[7]
-yellow = colors[8]
-cyan = colors[9]
+blue = '#1f77b4'
+orange = '#ff7f0e'
+green = '#2ca02c'
+red = '#d62728'
+purple = '#9467bd'
+brown = '#8c564b'
+pink = '#e377c2'
+grey = '#7f7f7f'
+yellow = '#bcbd22'
+cyan = '#17becf'
 black = '#000000'
 
-if len(E_2) < 4:
-    colors = [blue, red, black]
-else:
-    colors = [blue, red, orange, black, green] + colors[4:]
+if len(E_2) == 1:
+    cycler = plt.cycler(color=[black], marker=['d'])
+elif len(E_2) < 4: # 2 and 3
+    cycler = plt.cycler(color=[blue, red, black], marker=['o', 's', 'd'])
+else: # 4 or more
+    cycler = plt.cycler(color=[blue, red, orange, black, green] + colors[4:],
+        marker=['o', 's', '^', 'd', 'x', '+', 'v', '<', '>', '*', 'p'])
     
-markers = ['o', 's', '^', 'd', 'v', '<', '>', 'x', '+']
+fig = plt.figure(figsize=(7.75, 3))
+fig.subplots_adjust(hspace=0.5, wspace=0.5)
 
-# clear the current figure, if opened, and set parameters
-fig = plt.figure()
-fig.clf()
-fig.set_size_inches(7.75,3)
-fig.subplots_adjust(hspace = 0.5, wspace = 0.5)
-
-axL1, axR1 = fig.subplots(1,2)
+axL1, axR1 = fig.subplots(1, 2)
+axL1.set_prop_cycle(cycler)
+axR1.set_prop_cycle(cycler)
 N = []
+inds = []
 for i, error in enumerate(E_2):
     N.append(np.log2(NY[i]*NX[i]**2).astype('int'))
-    axL1.semilogy(N[i], error, markers[i] + '-', color=colors[i], label=labels[i])
+    inds.append(N[i] >= 2)
+    axL1.semilogy(N[i][inds[i]], error[inds[i]]/(2*np.pi), label=labels[i],
+                  linewidth=solid_linewidth)
 axL1.minorticks_off()
-N_ticks = np.unique(np.concatenate(N))
+N_ticks = np.unique(np.concatenate([N[i][ind] for i, ind in enumerate(inds)]))
 axL1.set_xticks(N_ticks)
 axL1.set_xlabel(r'$\log_2(N_xN_y)$')
 axL1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
-axL1.legend()
+axL1.legend(loc='lower left')
 xlim = axL1.get_xlim()
 
-# plot the intra-step order of convergence
-plt.rcParams['lines.linewidth'] = dashed_linewidth
 axR1.axhline(2, linestyle=':', color=black, label='Expected order')
 for i, error in enumerate(E_2):
-    logE = np.log(error)
-    logN = np.log(NX[i])
+    logE = np.log(error[inds[i]])
+    logN = np.log(NX[i][inds[i]])
     order = (logE[:-1] - logE[1:])/(logN[1:] - logN[:-1])
-    intraN = 0.5 * (N[i][:-1] + N[i][1:])
-    axR1.plot(intraN, order, markers[i] + ':', color=colors[i], label=labels[i] + ' order')
+    intraN = 0.5 * (N[i][inds[i]][:-1] + N[i][inds[i]][1:])
+    axR1.plot(intraN, order, linestyle=':', label=labels[i],
+              linewidth=dashed_linewidth)
 axR1.set_xticks(N_ticks)
 axR1.set_xlim(xlim)
 axR1.set_xlabel(r'$\log_2(N_xN_y)$')
@@ -325,11 +418,7 @@ ordt = 3
 ordstep = 0.5
 axR1.set_ylim(ordb, ordt)
 axR1.set_yticks(np.linspace(ordb, ordt, (ordt - ordb)/ordstep + 1))
+lines, labels = axR1.get_legend_handles_labels()
+axR1.legend(lines[1:], labels[1:], loc='lower right')
 
-# lines, labels = axL1.get_legend_handles_labels()
-# lines2, labels2 = axL2.get_legend_handles_labels()
-# # leg = axL2.legend(lines, labels, loc='lower left')
-# # leg = axL2.legend(lines + lines2, labels + labels2, loc='best')
-# # leg = axL2.legend(lines + [lines2[-1]], labels + [labels2[-1]], loc='lower left')
-
-fig.savefig("boundary_conv.pdf", bbox_inches = 'tight', pad_inches = 0)
+# fig.savefig("boundary_conv.pdf", bbox_inches = 'tight', pad_inches = 0)
