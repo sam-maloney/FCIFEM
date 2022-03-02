@@ -9,41 +9,40 @@ Created on Mon Jun  8 13:47:07 2020
 print("\n!!!!! NEED TO CHANGE COMPUTATION OF B VECTOR FOR THIS TO WORK !!!!!\n")
 
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import scipy.sparse as sp
 import scipy.sparse.linalg as sp_la
 
 import fcifem
 
 class QuadraticTestProblem:
-    xmax = 2*np.pi
-    n = 16
-    # a = 0.01
+    xmax = 1.
+    ymax = 1.
+    n = 3
+    N = (2*np.pi/ymax)*n
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
     a = (1 - b*xmax)/xmax**2
     
-    dfdyMax = n*xmax
-    dfdxMax = 1 + 2*a*n*xmax**2 + b*n*xmax
+    umax = xmax
+    dudyMax = N*xmax
+    dudxMax = 1 + 2*a*N*xmax**2 + b*N*xmax
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        n = self.n
+        N = self.N
         a = self.a
         b = self.b
-        return (6*a*n*x - 2*b*n)*np.cos(n*(y - a*x**2 - b*x)) + \
-            (4*a**2*n**2*x**3 + 4*a*b*n**2*x**2 + b**2*n**2*x + n**2*x) * \
-            np.sin(n*(y - a*x**2 - b*x))
+        return N*(N*x*(4*a**2*x**2 + 4*a*b*x + b**2 + 1)*np.sin(N*(y - a*x**2 - b*x))
+                  + 2*(3*a*x + b)*np.cos(N*(y - a*x**2 - b*x)))
     
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return x*np.sin(self.n*(y - self.a*x**2 - self.b*x))
+        return x*np.sin(2*np.pi*self.n*(y - self.a*x**2 - self.b*x))
         
 f = QuadraticTestProblem()
-dfRatio = f.dfdyMax / f.dfdxMax
+duRatio = f.dudyMax / f.dudxMax
 
 class QaudraticBoundaryFunction:
     
@@ -95,18 +94,32 @@ class QaudraticBoundaryFunction:
             dBdx = x / np.sqrt(x**2 + self.inva*(1 - y))
             dBdy = -0.5*self.inva / np.sqrt(x**2 + self.inva*(1 - y))
         return dBdx, dBdy
+
+class StraightBoundaryFunction:
+    def __call__(self, p):
+        nPoints = p.size // 2
+        return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
+    
+    def deriv(self, p, boundary):
+        # this should never be used, just return dummy values
+        return (1., 1.)
+
+# B = StraightBoundaryFunction()
+# mapping = fcifem.mappings.StraightMapping()
     
 B = QaudraticBoundaryFunction(f.a, f.b)
 mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
+perturbation = 0.1
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 0.,
-    'px' : 0.,
-    'py' : 0.,
-    'seed' : 42 }
+    'px' : perturbation,
+    'py' : perturbation,
+    'seed' : 42,
+    'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
 start = 1
@@ -115,8 +128,8 @@ nSamples = stop - start + 1
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int32')
 E_inf = np.empty(nSamples, dtype='float64')
 E_2 = np.empty(nSamples, dtype='float64')
-# NYratio = 1
-NYratio = np.rint(f.dfdyMax / (2*np.pi)).astype('int')
+NYratio = 16
+# NYratio = np.rint(f.dudyMax / f.xmax).astype('int')
 
 # loop over N to test convergence where N is the number of
 # grid cells along one dimension, each cell forms 2 triangles
@@ -125,7 +138,7 @@ for iN, NX in enumerate(NX_array):
     
     NY = NYratio * NX
     # NDX = 1
-    NDX = max(np.rint(2*np.pi*NYratio / dfRatio).astype('int'), 1)
+    NDX = max(np.rint(f.xmax*NYratio / duRatio).astype('int'), 1)
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
@@ -135,17 +148,17 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX}, \tNY = {NY}, \tnDoFs = {sim.nDoFs}')
     
     # Assemble the mass matrix and forcing term
-    if NDX == 1:
-        Qord = 2
-    else:
-        Qord = 1
-    # Qord = 3
+    # if NDX == 1:
+    #     Qord = 2
+    # else:
+    #     Qord = 1
+    Qord = 1
     sim.computeSpatialDiscretization(f.solution, NQX=NDX, NQY=NY, Qord=Qord,
-                                     quadType='g', massLumping = False)
+                                     quadType='g', massLumping=False)
     
-    # sim.u = sp_la.spsolve(sim.M, sim.b)
-    tolerance = 1e-10
-    sim.u, info = sp_la.lgmres(sim.M, sim.b, tol=tolerance, atol=tolerance)
+    sim.u = sp_la.spsolve(sim.M, sim.b)
+    # tolerance = 1e-10
+    # sim.u, info = sp_la.lgmres(sim.M, sim.b, tol=tolerance, atol=tolerance)
     
     # compute the analytic solution and error norms
     u_exact = f.solution(sim.DoFs)
@@ -159,11 +172,8 @@ for iN, NX in enumerate(NX_array):
 #%% Plotting
 
 # clear the current figure, if opened, and set parameters
-# fig = plt.gcf()
-fig = plt.figure()
-fig.clf()
-fig.set_size_inches(7.75,3)
-plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
+fig = plt.figure(figsize=(7.75, 3))
+fig.subplots_adjust(hspace=0.3, wspace=0.3)
 
 # SMALL_SIZE = 7
 # MEDIUM_SIZE = 8
@@ -193,9 +203,9 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-                      ,cmap='seismic', vmin=vmin, vmax=vmax)
-# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+#                       ,cmap='seismic', vmin=vmin, vmax=vmax)
+field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.0]:
     ax1.plot(x, [sim.mapping(np.array([[0, yi]]), i) for i in x], 'k')
@@ -208,8 +218,14 @@ cbar = plt.colorbar(field)
 cbar.formatter.set_powerlimits((0, 0))
 plt.xlabel(r'$x$')
 plt.ylabel(r'$y$', rotation=0)
-plt.xticks(np.linspace(0, 2*np.pi, 7), 
-    ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+if abs(f.xmax - 2*np.pi) < 1e-10:
+    plt.xticks(np.linspace(0, f.xmax, 5),
+        ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
+#  plt.xticks(np.linspace(0, 2*np.pi, 7), 
+#      ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+else:
+    plt.xticks(np.linspace(0, f.xmax, 6))
+    ax1.set_aspect('equal')
 plt.margins(0,0)
 
 # plot the error convergence

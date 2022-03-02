@@ -7,9 +7,7 @@ Created on Mon Jun  8 13:47:07 2020
 """
 
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import scipy.sparse as sp
 import scipy.sparse.linalg as sp_la
 
 import fcifem
@@ -18,22 +16,31 @@ from timeit import default_timer
 
 ##### standard isotropic and periodic test problem
 class sinXsinY:
+    xmax = 1.
+    ymax = 1.
+    xfac = 2*np.pi/xmax
+    yfac = 2*np.pi/ymax
+    umax = (1 / (xfac**2 + yfac**2))
+    dudxMax = umax*xfac
+    dudyMax = umax*yfac
+    
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return np.sin(x)*np.sin(2*np.pi*y)
+        return np.sin(self.xfac*x)*np.sin(self.yfac*y)  
     
     def solution(self, p):
-        return (1 / (1 + 4*np.pi**2)) * self(p)
+        return self.umax * self(p)
 
 class TestProblem:
-    xmax = 2*np.pi
-    # a = 0.02
+    xmax = 1.
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
     a = (1 - b*xmax)/xmax**2
-    dfdyMax = 1
-    dfdxMax = 1
+    
+    umax = 1.
+    dudyMax = 1.
+    dudxMax = 1.
     
     def __call__(self, p):
         return np.ones(p.size // 2)
@@ -41,18 +48,19 @@ class TestProblem:
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return ((abs(x - np.pi) < 1e-10) & (abs(y) < 1e-10)).astype('float')
+        return ((abs(x - 0.5*self.xmax) < 1e-10) & (abs(y) < 1e-10)).astype('float')
 
 # function for linear patch test
 class linearPatch():
-    xmax = 2*np.pi
-    # a = 0.02
+    xmax = 1.
+    ymax = 1.
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
     a = (1 - b*xmax)/xmax**2
     
-    dfdyMax = 2.
-    dfdxMax = 1.
+    umax = xmax + 2*ymax
+    dudyMax = 2.
+    dudxMax = 1.
     
     def __call__(self, p):
         return np.zeros(p.size // 2)
@@ -64,34 +72,38 @@ class linearPatch():
 
 
 class QuadraticTestProblem:
-    xmax = 2*np.pi
-    n = 1
+    xmax = 1.
+    ymax = 1.
+    n = 3
+    N = (2*np.pi/ymax)*n
     # a = 0.01
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
     a = (1 - b*xmax)/xmax**2
     
-    dfdyMax = 2*np.pi*n*xmax
-    dfdxMax = 1 + 2*a*2*np.pi*n*xmax**2 + b*2*np.pi*n*xmax
+    umax = xmax
+    dudyMax = N*xmax
+    dudxMax = 1 + 2*a*N*xmax**2 + b*N*xmax
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        n = 2*np.pi*self.n
+        N = self.N
         a = self.a
         b = self.b
-        return n*(n*x*(4*a**2*x**2 + 4*a*b*x + b**2 + 1)*np.sin(n*(y - a*x**2 - b*x))
-                  + 2*(3*a*x + b)*np.cos(n*(y - a*x**2 - b*x)))
+        return N*(N*x*(4*a**2*x**2 + 4*a*b*x + b**2 + 1)*np.sin(N*(y - a*x**2 - b*x))
+                  + 2*(3*a*x + b)*np.cos(N*(y - a*x**2 - b*x)))
     
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return x*np.sin(2*np.pi*self.n*(y - self.a*x**2 - self.b*x))
+        return x*np.sin(self.N*(y - self.a*x**2 - self.b*x))
         
 f = QuadraticTestProblem()
 # f = linearPatch()
+# f = sinXsinY()
 
-dfRatio = f.dfdyMax / f.dfdxMax
+duRatio = f.dudyMax / f.dudxMax
 
 #%% Boundary Functions and Mappings
 
@@ -118,6 +130,7 @@ class QaudraticBoundaryFunction:
     def deriv(self, p, boundary):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
+
         a = self.a
         b = self.b
         if boundary == 'bottom':
@@ -170,9 +183,9 @@ class StraightBoundaryFunction:
         return (1., 1.)
 
 # B = StraightBoundaryFunction()
-# mapping = fcifem.mappings.StraightMapping()\
+# mapping = fcifem.mappings.StraightMapping()
 
-# mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
+# mapping = fcifem.mappings.LinearMapping(1/f.xmax)
 # B = LinearBoundaryFunction(mapping.slope)
 
 B = QaudraticBoundaryFunction(f.a, f.b)
@@ -180,7 +193,7 @@ mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
 
 #%%
-perturbation = 0.
+perturbation = 0.1
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
@@ -188,11 +201,12 @@ kwargs={
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
     'px' : perturbation,
     'py' : perturbation,
-    'seed' : 42 }
+    'seed' : 42,
+    'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
 start = 1
-stop = 1
+stop = 5
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -208,11 +222,13 @@ for iN, NX in enumerate(NX_array):
     
     start_time = default_timer()
     
-    NQX = 1
-    # NY = 16*NX
-    NY = NX
-    # NY = max(int(f.dfdyMax / (2*np.pi)) * NX, NX)
-    # NQX = max(int(2*np.pi*NY / (NX*dfRatio)), 1)
+    NY = 16*NX
+    # NY = NX
+    # NY = max(int(f.dudyMax / f.xmax) * NX, NX)
+    
+    # NQX = max(int(f.xmax*NY / (NX*duRatio)), 1)
+    NQX = 32
+    
     NQY = NY
 
     # initialize simulation class
@@ -220,7 +236,7 @@ for iN, NX in enumerate(NX_array):
     
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
     # BC = fcifem.boundaries.DirichletXPeriodicYBoundary(sim, f.solution)
-    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=1)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=0)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
     
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
@@ -232,8 +248,8 @@ for iN, NX in enumerate(NX_array):
     #     Qord = 1
     Qord = 2
     
-    vci = 'VCI-C'
-    # vci = None
+    # vci = 'VCI-C'
+    vci = None
     if (vci == 'VCI'):
         sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     elif (vci == 'VCI-C'):
@@ -263,8 +279,8 @@ for iN, NX in enumerate(NX_array):
     # compute the analytic solution and error norms
     uExact = f.solution(sim.DoFs)
     
-    E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf)
-    E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs)
+    E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf) / f.umax
+    E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs) / f.umax
     
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}')
@@ -327,10 +343,13 @@ cbar = plt.colorbar(field)
 cbar.formatter.set_powerlimits((0, 0))
 plt.xlabel(r'$x$')
 plt.ylabel(r'$y$', rotation=0)
-plt.xticks(np.linspace(0, 2*np.pi, 5), 
-    ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
-# plt.xticks(np.linspace(0, 2*np.pi, 7), 
-#     ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+if abs(f.xmax - 2*np.pi) < 1e-10:
+    plt.xticks(np.linspace(0, f.xmax, 5),
+        ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
+#  plt.xticks(np.linspace(0, 2*np.pi, 7), 
+#      ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+else:
+    plt.xticks(np.linspace(0, f.xmax, 6))
 plt.title('Absolute Error')
 plt.margins(0,0)
 

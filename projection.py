@@ -6,27 +6,42 @@ Created on Mon Jun  8 13:47:07 2020
 """
 
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import scipy.sparse as sp
 import scipy.sparse.linalg as sp_la
 
 import fcifem
-
-mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
         
-def f(p):
-    p.shape = (-1,2)
-    return np.sin(p[:,0])*np.sin(2*np.pi*p[:,1])
+class sinXsinY:
+    xmax = 1.
+    ymax = 1.
+    xfac = 2*np.pi/xmax
+    yfac = 2*np.pi/ymax
+    umax = (1 / (xfac**2 + yfac**2))
+    dudxMax = umax*xfac
+    dudyMax = umax*yfac
+    
+    def __call__(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        return np.sin(self.xfac*x)*np.sin(self.yfac*y)  
+    
+    def solution(self, p):
+        return self.umax * self(p)
+    
+f = sinXsinY()
 
+mapping = fcifem.mappings.SinusoidalMapping(0.2, -0.25*f.xmax, f.xmax)
+
+perturbation = 0.5
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 0.,
-    'px' : 0.1,
-    'py' : 0.1,
-    'seed' : 42 }
+    'px' : perturbation,
+    'py' : perturbation,
+    'seed' : 42,
+    'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
 start = 2
@@ -45,22 +60,22 @@ for iN, NX in enumerate(NX_array):
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    
-    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
-    
     sim.setInitialConditions(f)
     
-    # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, NQX=6, NQY=NY, Qord=3, quadType='g',
-                                     massLumping = False)
+    print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nDoFs}')
     
-    fh = sp_la.spsolve(sim.M, sim.b)
+    
+    # Assemble the mass matrix and forcing term
+    sim.computeSpatialDiscretization(f, NQX=1, NQY=NY, Qord=2, quadType='g',
+                                     massLumping=False)
+    
+    sim.u = sp_la.spsolve(sim.M, sim.b)
     
     # compute the analytic solution and error norms
     u_exact = sim.u0func(sim.nodes)
     
-    E_inf[iN] = np.linalg.norm(fh - u_exact, np.inf)
-    E_2[iN] = np.linalg.norm(fh - u_exact)/np.sqrt(sim.nNodes)
+    E_inf[iN] = np.linalg.norm(sim.u - u_exact, np.inf)
+    E_2[iN] = np.linalg.norm(sim.u - u_exact)/np.sqrt(sim.nDoFs)
     
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}\n')
@@ -68,10 +83,8 @@ for iN, NX in enumerate(NX_array):
 ##### Begin Plotting Routines #####
 
 # clear the current figure, if opened, and set parameters
-fig = plt.gcf()
-fig.clf()
-fig.set_size_inches(7.75,3)
-plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
+fig = plt.figure(figsize=(7.75, 3))
+fig.subplots_adjust(hspace=0.3, wspace=0.3)
 
 # SMALL_SIZE = 7
 # MEDIUM_SIZE = 8
@@ -84,16 +97,13 @@ plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
 # plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
 # plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
-sim.u = fh
-
 sim.generatePlottingPoints(nx=1, ny=1)
 sim.computePlottingSolution()
 
-fh_plot = np.sum(sim.phiPlot * fh[sim.indPlot], axis=1)
+u_plot = np.sum(sim.phiPlot * sim.u[sim.indPlot], axis=1)
 
-# maxAbsU = np.max(np.abs(fh_plot))
-vmin = np.min((np.min(fh_plot), np.min(sim.U)))
-vmax = np.max((np.max(fh_plot), np.max(sim.U)))
+# vmin = np.min((np.min(u_plot), np.min(sim.U)))
+# vmax = np.max((np.max(u_plot), np.max(sim.U)))
 
 exact_sol = f(np.vstack((sim.X,sim.Y)).T)
 error = sim.U - exact_sol
@@ -117,8 +127,13 @@ cbar = plt.colorbar(field)
 cbar.formatter.set_powerlimits((0, 0))
 plt.xlabel(r'$x$')
 plt.ylabel(r'$y$', rotation=0)
-plt.xticks(np.linspace(0, 2*np.pi, 7), 
-    ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+if abs(f.xmax - 2*np.pi) < 1e-10:
+    plt.xticks(np.linspace(0, f.xmax, 5),
+        ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
+#  plt.xticks(np.linspace(0, 2*np.pi, 7), 
+#      ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+else:
+    plt.xticks(np.linspace(0, f.xmax, 6))
 plt.margins(0,0)
 
 # plot the error convergence
@@ -149,27 +164,4 @@ lines2, labels2 = ax2.get_legend_handles_labels()
 ax2.legend(lines + lines2, labels + labels2, loc='best')
 plt.margins(0,0)
 
-# plt.savefig("CD_MassLumped_RK4.pdf",
-#     bbox_inches = 'tight', pad_inches = 0)
-
-# For all of the below
-# NX_array = np.array([  4,   8,  16,  32,  64, 128, 256])
-# NY = NX
-
-# # Uniform spacing, Nquad=5
-# E_2 = np.array([1.17817353e-01, 9.85576979e-02, 2.45978802e-02, 6.02352877e-03,
-#        1.49687962e-03, 3.73653269e-04, 9.33777137e-05])
-# E_inf = np.array([2.35634705e-01, 1.74694642e-01, 4.76311914e-02, 1.16460444e-02,
-#        2.89217058e-03, 7.21715652e-04, 1.80346973e-04])
-
-# # 0.1 perturbation, Nquad=5
-# E_2 = np.array([1.34140716e-01, 1.02430887e-01, 2.53661338e-02, 6.15948128e-03,
-#        1.52570919e-03, 3.80520484e-04, 9.52952878e-05])
-# E_inf = np.array([2.42670205e-01, 1.84218885e-01, 5.24279763e-02, 1.34969241e-02,
-#        3.40146362e-03, 9.10205975e-04, 2.26928637e-04])
-
-# # 0.5 perturbation, Nquad=5
-# E_2 = np.array([3.32304951e-01, 1.58513739e-01, 3.94981765e-02, 9.56499954e-03,
-#        2.23580423e-03, 5.46624171e-04, 1.40440403e-04])
-# E_inf = np.array([5.36106904e-01, 3.84477693e-01, 1.21872302e-01, 3.14200379e-02,
-#        7.67059713e-03, 2.10334214e-03, 5.30771969e-04])
+# fig.savefig("CD_MassLumped_RK4.pdf", bbox_inches = 'tight', pad_inches = 0)

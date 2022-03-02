@@ -72,7 +72,7 @@ class FciFemSim:
     """
     
     def __init__(self, NX, NY, mapping, velocity, diffusivity=0.,
-                 px=0., py=0., seed=None, **kwargs):
+                 px=0., py=0., seed=None, xmax=2*np.pi, **kwargs):
         """Initialize attributes of FCIFEM simulation class
 
         Parameters
@@ -100,6 +100,9 @@ class FciFemSim:
         seed : {None, int, array_like[ints], numpy.random.SeedSequence}, optional
             A seed to initialize the RNG. If None, then fresh, unpredictable
             entropy will be pulled from the OS. The default is None.
+        xmax : float, optional
+            Maximum x-coordinate of the rectuangular domain.
+            The default is 2*np.pi.
         **kwargs
             Keyword arguments
             
@@ -109,6 +112,7 @@ class FciFemSim:
         self.ndim = 2
         self.NX = NX
         self.NY = NY
+        self.xmax = xmax
         self.mapping = mapping
         self.velocity = velocity
         if isinstance(diffusivity, np.ndarray):
@@ -124,8 +128,8 @@ class FciFemSim:
         if "nodeX" in kwargs:
             self.nodeX = kwargs["nodeX"]
         else:
-            self.nodeX = 2*np.pi*np.arange(NX+1)/NX
-            px *= 2*np.pi/NX
+            self.nodeX = xmax*np.arange(NX+1)/NX
+            px *= xmax/NX
             self.nodeX[1:-1] += rng.uniform(-px, px, self.nodeX[1:-1].shape)
         self.nodeY = np.tile(np.linspace(0, 1, NY+1), NX+1).reshape(NX+1,-1)
         py /= NY
@@ -435,7 +439,7 @@ class FciFemSim:
                         row_ind[index] = i
                         col_ind[index] = j
                         index += 1
-        
+        NQX
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
@@ -608,14 +612,14 @@ class FciFemSim:
             # [6.28318531, 0.        ]
             self.boundaryIntegrals[nTopNodes] = \
                 g(self.nodes[nDoFs + nTopNodes]) * 0.5 * \
-                (1/self.idy[-1][0], DirichletNodeX[0][-2] - 2*np.pi)
+                (1/self.idy[-1][0], DirichletNodeX[0][-2] - self.xmax)
             # [0., 1.]
             self.boundaryIntegrals[nTopNodes - 1] = \
                 g(self.nodes[nDoFs + nTopNodes - 1]) * 0.5 * \
                 (-1/self.idy[0][-1], DirichletNodeX[1][1])
             # [6.28318531, 1.        ]
             self.boundaryIntegrals[0] = g(self.nodes[nDoFs]) * 0.5 * \
-                (1/self.idy[-1][-1], 2*np.pi - DirichletNodeX[1][-2])
+                (1/self.idy[-1][-1], self.xmax - DirichletNodeX[1][-2])
             self.rOld[nDoFs:,:,0] += self.boundaryIntegrals
             self.gradphiSums = self.rOld[:,:,0]
             nConstraints = 2*nNodes + 1
@@ -854,14 +858,14 @@ class FciFemSim:
                 inds[inds < 0] = -1
                 self.indPlot[iPlane*nPointsPerPlane + iP] = inds
         # Deal with right boundary
-        points = np.hstack((np.full((NY*ny + 1, 1), 2*np.pi), points[0:NY*ny + 1,1:2]))
+        points = np.hstack((np.full((NY*ny + 1, 1), self.xmax), points[0:NY*ny + 1,1:2]))
         for iP, point in enumerate(points):
                 phis, _, inds = self.BC(point, iPlane)
                 self.phiPlot[NX*nPointsPerPlane + iP] = phis
                 inds[inds < 0] = -1
                 self.indPlot[NX*nPointsPerPlane + iP] = inds
         
-        self.X = np.append(self.X, np.full(NY*ny+1, 2*np.pi))
+        self.X = np.append(self.X, np.full(NY*ny+1, self.xmax))
         self.Y = np.tile(points[0:NY*ny + 1,1], NX*nx + 1)
         self.U = np.sum(self.phiPlot * self.uPlot[self.indPlot], axis=1)
     

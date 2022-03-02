@@ -7,9 +7,7 @@ Created on Mon Jun  8 13:47:07 2020
 """
 
 import numpy as np
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import scipy.sparse as sp
 import scipy.sparse.linalg as sp_la
 
 # import fcifem
@@ -17,11 +15,10 @@ import fcifem_periodic as fcifem
 
 from timeit import default_timer
 
-# mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
-mapping = fcifem.mappings.LinearMapping(1/(2*np.pi))
-# mapping = fcifem.mappings.StraightMapping()
-
 class slantedTestProblem:
+    xmax = 2*np.pi
+    ymax = 1.
+    
     n = 10
     p2 = np.pi**2
     C = 0.5/(8*p2*n-(4*p2+(4*p2+1)*n**2)**2/(8*p2*n))
@@ -44,33 +41,43 @@ class slantedTestProblem:
                                     + self.C*np.cos(_2py)*np.cos(n2pyx)
         
 class sinXsinY:
-    solution_factor = 1 / (1 + 4*np.pi**2)
+    xmax = 1.
+    ymax = 1.
+    xfac = 2*np.pi/xmax
+    yfac = 2*np.pi/ymax
+    umax = (1 / (xfac**2 + yfac**2))
+    dudxMax = umax*xfac
+    dudyMax = umax*yfac
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return np.sin(x)*np.sin(2*np.pi*y)
+        return np.sin(self.xfac*x)*np.sin(self.yfac*y)  
     
     def solution(self, p):
-        return self.solution_factor * self(p)
+        return self.umax * self(p)
 
-f = slantedTestProblem()
-# f = sinXsinY()
-uExactFunc = f.solution
+# f = slantedTestProblem()
+f = sinXsinY()
 
+mapping = fcifem.mappings.SinusoidalMapping(0.2, -0.25*f.xmax, f.xmax)
+# mapping = fcifem.mappings.LinearMapping(1/f.xmax)
+# mapping = fcifem.mappings.StraightMapping()
 
+perturbation = 0.1
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
     'velocity' : np.array([0., 0.]),
     'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
-    'px' : 0.,
-    'py' : 0.,
-    'seed' : 42 }
+    'px' : perturbation,
+    'py' : perturbation,
+    'seed' : 42,
+    'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
-start = 5
-stop = 5
+start = 2
+stop = 6
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -94,7 +101,7 @@ for iN, NX in enumerate(NX_array):
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
     ##### These require the fcifem_periodic version of the module #####
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
     
@@ -103,7 +110,7 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
     
     # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, NQX=2, NQY=NY, Qord=3, quadType='g',
+    sim.computeSpatialDiscretization(f, NQX=1, NQY=NY, Qord=3, quadType='g',
                                      massLumping=False)
     
     try:
@@ -113,7 +120,7 @@ for iN, NX in enumerate(NX_array):
     
     # sim.K.data[0] = 1.
     # sim.K.data[1:sim.K.indptr[1]] = 0.
-    # sim.b[0] = uExactFunc(sim.DoFs[0])
+    # sim.b[0] = f.solution(sim.DoFs[0])
 
     ##### Enforce exact solution constraints directly #####
     
@@ -126,27 +133,27 @@ for iN, NX in enumerate(NX_array):
     # sim.K[n,n] = 1.
     # sim.b[n] = 0.
     
-    # # n = int(NX*NY/2)
-    # # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    # # sim.K[n,n] = 1.
-    # # sim.b[n] = 0.
-    
-    # n = int(NX*NY*3/4)
+    # n = int(NX*NY/2)
     # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
     # sim.K[n,n] = 1.
     # sim.b[n] = 0.
+    
+    # # n = int(NX*NY*3/4)
+    # # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
+    # # sim.K[n,n] = 1.
+    # # sim.b[n] = 0.
     
     # Centre point
     n = int(NX*NY/2 + NY/2)
     sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
     sim.K[n,n] = 1.
-    sim.b[n] = uExactFunc(sim.DoFs[n])
+    sim.b[n] = f.solution(sim.DoFs[n])
     
     for n, node in enumerate(sim.DoFs):
         if node.prod() == 0.:
             sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
             sim.K[n,n] = 1.
-            sim.b[n] = uExactFunc(sim.DoFs[n])
+            sim.b[n] = f.solution(sim.DoFs[n])
     
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]} s')
@@ -162,43 +169,39 @@ for iN, NX in enumerate(NX_array):
     print(f'solve time = {t_solve[iN]} s')
     start_time = default_timer()
     
-    # compute the analytic solution and error norms
-    uExact = uExactFunc(sim.DoFs)
+    # compute the analytic solution and normalized error norms
+    uExact = f.solution(sim.DoFs)
     
-    E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf)
-    E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs)
+    E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf) / f.umax
+    E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs) / f.umax
     
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}\n')
 
 #%% Plotting
 
+plt.rc('pdf', fonttype=42)
+plt.rc('text', usetex=True)
+# fontsize : int or {'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'}
+# plt.rc('font', size='small')
+# plt.rc('legend', fontsize='small')
+# plt.rc('axes', titlesize='medium', labelsize='medium')
+# plt.rc('xtick', labelsize='small')
+# plt.rc('ytick', labelsize='small')
+# plt.rc('figure', titlesize='large')
+
 # clear the current figure, if opened, and set parameters
-# fig = plt.gcf()
-fig = plt.figure()
-fig.clf()
-fig.set_size_inches(7.75,3)
-plt.subplots_adjust(hspace = 0.3, wspace = 0.3)
+fig = plt.figure(figsize=(7.75, 3))
+fig.subplots_adjust(hspace=0.3, wspace=0.3)
 
-# SMALL_SIZE = 7
-# MEDIUM_SIZE = 8
-# BIGGER_SIZE = 10
-# plt.rc('font', size=SMALL_SIZE)          # controls default text sizes
-# plt.rc('axes', titlesize=MEDIUM_SIZE)    # fontsize of the axes title
-# plt.rc('axes', labelsize=MEDIUM_SIZE)    # fontsize of the x and y labels
-# plt.rc('xtick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
-# plt.rc('ytick', labelsize=SMALL_SIZE)    # fontsize of the tick labels
-# plt.rc('legend', fontsize=SMALL_SIZE)    # legend fontsize
-# plt.rc('figure', titlesize=BIGGER_SIZE)  # fontsize of the figure title
-
-sim.generatePlottingPoints(nx=5, ny=5)
+sim.generatePlottingPoints(nx=1, ny=1)
 # sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
 # vmax = np.max(sim.U)
 
-exactSol = uExactFunc(np.vstack((sim.X,sim.Y)).T)
+exactSol = f.solution(np.vstack((sim.X,sim.Y)).T)
 error = sim.U - exactSol
 maxAbsErr = np.max(np.abs(error))
 # maxAbsErr = np.max(np.abs(sim.u - uExact))
@@ -206,11 +209,12 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-                       ,cmap='seismic', vmin=vmin, vmax=vmax)
+# field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
+#                        ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.DoFs[:,0], sim.DoFs[:,1], sim.u - uExact
 #                     ,shading='gouraud', cmap='seismic', vmin=vmin, vmax=vmax)
-# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+# field = ax1.tripcolor(sim.X, sim.Y, exactSol, shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.4, 0.5, 0.6]:
     try:
@@ -226,14 +230,19 @@ cbar = plt.colorbar(field)
 cbar.formatter.set_powerlimits((0, 0))
 plt.xlabel(r'$x$')
 plt.ylabel(r'$y$', rotation=0)
-plt.xticks(np.linspace(0, 2*np.pi, 7), 
-    ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+if abs(f.xmax - 2*np.pi) < 1e-10:
+    plt.xticks(np.linspace(0, f.xmax, 5),
+        ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
+#  plt.xticks(np.linspace(0, 2*np.pi, 7), 
+#      ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
+else:
+    plt.xticks(np.linspace(0, f.xmax, 6))
 plt.margins(0,0)
 
 # plot the error convergence
 ax1 = plt.subplot(122)
-plt.loglog(NX_array, E_inf, '.-', label=r'$E_\infty$ magnitude')
-plt.loglog(NX_array, E_2, '.-', label=r'$E_2$ magnitude')
+plt.loglog(NX_array, E_inf, '.-', label=r'$E_\infty$')
+plt.loglog(NX_array, E_2, '.-', label=r'$E_2$')
 plt.minorticks_off()
 plt.xticks(NX_array, NX_array)
 plt.xlabel(r'$NX$')
@@ -255,9 +264,10 @@ plt.yticks(np.linspace(0,5,6))
 # plt.ylim(0, 3)
 # plt.yticks([0, 0.5, 1, 1.5, 2, 2.5, 3])
 plt.ylabel(r'Intra-step Order of Convergence')
-lines, labels = ax1.get_legend_handles_labels()
-lines2, labels2 = ax2.get_legend_handles_labels()
-ax2.legend(lines + lines2, labels + labels2, loc='best')
+ax1.legend()
+# lines, labels = ax1.get_legend_handles_labels()
+# lines2, labels2 = ax2.get_legend_handles_labels()
+# ax2.legend(lines + lines2, labels + labels2, loc='best')
 plt.margins(0,0)
 
 # plt.savefig(f"CD_{kwargs['px']}px_{kwargs['py']}py_notMassLumped_RK4.pdf",

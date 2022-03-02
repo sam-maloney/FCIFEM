@@ -72,7 +72,7 @@ class FciFemSim:
     """
     
     def __init__(self, NX, NY, mapping, velocity, diffusivity=0.,
-                 px=0., py=0., seed=None, **kwargs):
+                 px=0., py=0., seed=None, xmax=2*np.pi, **kwargs):
         """Initialize attributes of FCIFEM simulation class
 
         Parameters
@@ -100,6 +100,9 @@ class FciFemSim:
         seed : {None, int, array_like[ints], numpy.random.SeedSequence}, optional
             A seed to initialize the RNG. If None, then fresh, unpredictable
             entropy will be pulled from the OS. The default is None.
+        xmax : float, optional
+            Maximum x-coordinate of the rectuangular domain.
+            The default is 2*np.pi.
         **kwargs
             Keyword arguments
             
@@ -109,6 +112,7 @@ class FciFemSim:
         self.ndim = 2
         self.NX = NX
         self.NY = NY
+        self.xmax = xmax
         self.mapping = mapping
         self.velocity = velocity
         if isinstance(diffusivity, np.ndarray):
@@ -124,8 +128,8 @@ class FciFemSim:
         if "nodeX" in kwargs:
             self.nodeX = kwargs["nodeX"]
         else:
-            self.nodeX = 2*np.pi*np.arange(NX+1)/NX
-            px *= 2*np.pi/NX
+            self.nodeX = xmax*np.arange(NX+1)/NX
+            px *= xmax/NX
             self.nodeX[1:-1] += rng.uniform(-px, px, self.nodeX[1:-1].shape)
         self.nodeY = np.tile(np.linspace(0, 1, NY+1), NX+1).reshape(NX+1,-1)
         py /= NY
@@ -1410,7 +1414,7 @@ class FciFemSim:
         self.phiPlot[iPlane*nPointsPerPlane + iP + 1:] = self.phiPlot[0:NY*ny + 1]
         self.indPlot[iPlane*nPointsPerPlane + iP + 1:] = self.indPlot[0:NY*ny + 1]
         
-        self.X = np.append(self.X, (2*np.pi*np.ones(NY*ny + 1)))
+        self.X = np.append(self.X, (self.xmax*np.ones(NY*ny + 1)))
         self.Y = np.concatenate((np.tile(points[:,1], NX), points[0:NY*ny + 1,1]))
         self.U = np.sum(self.phiPlot * self.u[self.indPlot], axis=1)
     

@@ -125,7 +125,7 @@ class DirichletBoundary(Boundary):
             self.DirichletNodeX = [sim.nodeX, sim.nodeX]
         elif (type(NDX) is int) and (NDX > 0):
             self.DirichletNodeX = np.empty(NX*NDX+1)
-            self.DirichletNodeX[-1] = 2*np.pi
+            self.DirichletNodeX[-1] = self.sim.xmax
             self.DirichletNodeX[:-1] = np.concatenate(
                 [ np.linspace(nodeX[i], nodeX[i+1], NDX, False)
                   for i in range(NX) ] )
@@ -164,8 +164,8 @@ class DirichletBoundary(Boundary):
                         if (zetaTop > zetaL) and (zetaTop < zetaR):
                             topNodes[iPlane*NDX:(iPlane+1)*NDX] = \
                                 np.linspace(zetaL, zetaTop, NDX, True)
-            bottomNodes[-1] = 2*np.pi
-            topNodes[-1] = 2*np.pi
+            bottomNodes[-1] = self.sim.xmax
+            topNodes[-1] = self.sim.xmax
             if (np.any(topNodes == -1.0) or np.any(bottomNodes == -1.0)):
                 print('Error generating Dirichlet nodes')
             self.DirichletNodeX = [bottomNodes, topNodes]
@@ -196,8 +196,8 @@ class DirichletBoundary(Boundary):
                             bottomNodes.append(zetaBottom)
                         if (zetaTop > zetaL) and (zetaTop < zetaR):
                             topNodes.append(zetaTop)
-            bottomNodes.append(2*np.pi)
-            topNodes.append(2*np.pi)
+            bottomNodes.append(self.sim.xmax)
+            topNodes.append(self.sim.xmax)
             self.DirichletNodeX = [np.sort(bottomNodes), np.sort(topNodes)]
         
         self.nDirichletNodes = 2*self.nYnodes + self.DirichletNodeX[0].size \
@@ -217,7 +217,7 @@ class DirichletBoundary(Boundary):
             np.zeros(nYnodes), nodeY[0][-2:0:-1] )).T
         # right boundary
         self.nodes[-2*nYnodes:-nYnodes] = np.vstack((
-            np.full(nYnodes, 2*np.pi), nodeY[-1][-2:0:-1] )).T
+            np.full(nYnodes, self.sim.xmax), nodeY[-1][-2:0:-1] )).T
         # bottom boundary
         nBottomNodes = self.DirichletNodeX[0].size
         self.nodes[-2*nYnodes - nBottomNodes:-2*nYnodes,0] = \
@@ -469,7 +469,7 @@ class DirichletXPeriodicYBoundary(Boundary):
             np.zeros(nYnodes), nodeY[0][-2::-1] )).T
         # right boundary
         self.nodes[-2*nYnodes:-nYnodes] = np.vstack((
-            np.full(nYnodes, 2*np.pi), nodeY[-1][-2::-1] )).T
+            np.full(nYnodes, self.sim.xmax), nodeY[-1][-2::-1] )).T
         return self.nodes
     
     def mapping(self, points, zeta=0.):

@@ -115,19 +115,21 @@ class SinusoidalMapping(Mapping):
     def name(self): 
         return 'sinusoidal'
     
-    def __init__(self, amplitude, phase):
+    def __init__(self, amplitude, phase, xmax=2*np.pi):
         self.A = amplitude
         self.phase = phase
+        self.xmax = xmax
+        self.xfac = 2*np.pi/xmax
 
     def __call__(self, points, zeta=0.):
         x = points.reshape(-1,2)[:,0]
         y = points.reshape(-1,2)[:,1]
-        offsets = y - self.A*np.sin(x - self.phase)
-        return (self.A*np.sin(zeta - self.phase) + offsets)
+        offsets = y - self.A*np.sin(self.xfac*(x - self.phase))
+        return (self.A*np.sin(self.xfac*(zeta - self.phase)) + offsets)
     
     def deriv(self, points):
         x = points.reshape(-1,2)[:,0]
-        return self.A*np.cos(x - self.phase)
+        return self.A*self.xfac*np.cos(self.xfac*(x - self.phase))
     
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.A}, {self.phase})"
+        return f"{self.__class__.__name__}({self.A}, {self.phase}, {self.xmax})"
