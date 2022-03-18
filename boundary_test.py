@@ -23,48 +23,50 @@ class sinXsinY:
     umax = (1 / (xfac**2 + yfac**2))
     dudxMax = umax*xfac
     dudyMax = umax*yfac
-    
+
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return np.sin(self.xfac*x)*np.sin(self.yfac*y)  
-    
+        return np.sin(self.xfac*x)*np.sin(self.yfac*y)
+
     def solution(self, p):
         return self.umax * self(p)
 
-class TestProblem:
+
+class UnityFunction:
     xmax = 1.
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
     a = (1 - b*xmax)/xmax**2
-    
+
     umax = 1.
     dudyMax = 1.
     dudxMax = 1.
-    
+
     def __call__(self, p):
         return np.ones(p.size // 2)
-    
-    def solution(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        return ((abs(x - 0.5*self.xmax) < 1e-10) & (abs(y) < 1e-10)).astype('float')
 
-# function for linear patch test
+    def solution(self, p):
+        return np.ones(p.size // 2)
+        # x = p.reshape(-1,2)[:,0]
+        # y = p.reshape(-1,2)[:,1]
+        # return ((abs(x - 0.5*self.xmax) < 1e-10) & (abs(y) < 1e-10)).astype('float')
+
+
 class linearPatch():
     xmax = 1.
     ymax = 1.
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
     a = (1 - b*xmax)/xmax**2
-    
+
     umax = xmax + 2*ymax
     dudyMax = 2.
     dudxMax = 1.
-    
+
     def __call__(self, p):
         return np.zeros(p.size // 2)
-    
+
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
@@ -80,11 +82,11 @@ class QuadraticTestProblem:
     b = 0.05
     # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
     a = (1 - b*xmax)/xmax**2
-    
+
     umax = xmax
     dudyMax = N*xmax
     dudxMax = 1 + 2*a*N*xmax**2 + b*N*xmax
-    
+
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
@@ -93,102 +95,21 @@ class QuadraticTestProblem:
         b = self.b
         return N*(N*x*(4*a**2*x**2 + 4*a*b*x + b**2 + 1)*np.sin(N*(y - a*x**2 - b*x))
                   + 2*(3*a*x + b)*np.cos(N*(y - a*x**2 - b*x)))
-    
+
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
         return x*np.sin(self.N*(y - self.a*x**2 - self.b*x))
-        
+
 f = QuadraticTestProblem()
 # f = linearPatch()
 # f = sinXsinY()
+# f = UnityFunction()
 
 duRatio = f.dudyMax / f.dudxMax
 
-#%% Boundary Functions and Mappings
-
-class QaudraticBoundaryFunction:
-    
-    def __init__(self, a, b=0.):
-        self.a = a
-        self.b = b
-        if b == 0.:
-            self.inva = 1/a
-            self.deriv = self.deriv0
-            # # This doesn't work
-            # self.__call__ = self.call0
-    
-    def __call__(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        a = self.a
-        b = self.b
-        zetaBottom = (-b + np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x)))/(2*a)
-        zetaTop = (-b + np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x - 1)))/(2*a)
-        return zetaBottom, zetaTop
-    
-    def deriv(self, p, boundary):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-
-        a = self.a
-        b = self.b
-        if boundary == 'bottom':
-            dBdy = -1 / np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x))
-            dBdx = -(2*a*x + b) * dBdy
-        elif boundary == 'top':
-            dBdy = -1 / np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x - 1))
-            dBdx = -(2*a*x + b) * dBdy
-        return dBdx, dBdy
-    
-    def call0(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        zetaBottom = np.sqrt(x**2 - self.inva*y)
-        zetaTop = np.sqrt(x**2 + self.inva*(1 - y))
-        return zetaBottom, zetaTop
-    
-    def deriv0(self, p, boundary):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        if boundary == 'bottom':
-            dBdx = x / np.sqrt(x**2 - self.inva*y)
-            dBdy = -0.5*self.inva / np.sqrt(x**2 - self.inva*y)
-        elif boundary == 'top':
-            dBdx = x / np.sqrt(x**2 + self.inva*(1 - y))
-            dBdy = -0.5*self.inva / np.sqrt(x**2 + self.inva*(1 - y))
-        return dBdx, dBdy
-
-class LinearBoundaryFunction:
-    def __init__(self, slope):
-        self.slope = slope
-    
-    def __call__(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        zetaBottom = x - y/self.slope
-        zetaTop = x + (1-y)/self.slope
-        return zetaBottom, zetaTop
-    
-    def deriv(self, p, boundary):
-        return (1., -1./self.slope)
-
-class StraightBoundaryFunction:
-    def __call__(self, p):
-        nPoints = p.size // 2
-        return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
-    
-    def deriv(self, p, boundary):
-        # this should never be used, just return dummy values
-        return (1., 1.)
-
-# B = StraightBoundaryFunction()
 # mapping = fcifem.mappings.StraightMapping()
-
 # mapping = fcifem.mappings.LinearMapping(1/f.xmax)
-# B = LinearBoundaryFunction(mapping.slope)
-
-B = QaudraticBoundaryFunction(f.a, f.b)
 mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
 
@@ -206,7 +127,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 5
+stop = 1
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -219,69 +140,70 @@ dxi = []
 # grid cells along one dimension, each cell forms 2 triangles
 # therefore number of nodes equals (N+1)*(N+1)
 for iN, NX in enumerate(NX_array):
-    
+
     start_time = default_timer()
-    
+
     NY = 16*NX
     # NY = NX
     # NY = max(int(f.dudyMax / f.xmax) * NX, NX)
-    
+
     # NQX = max(int(f.xmax*NY / (NX*duRatio)), 1)
     NQX = 32
-    
+
     NQY = NY
 
     # initialize simulation class
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    
+
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
     # BC = fcifem.boundaries.DirichletXPeriodicYBoundary(sim, f.solution)
-    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=0)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, NDX=0)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
-    
+
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
-        
+
     # Assemble the mass matrix and forcing term
     # if NQX == 1:
     #     Qord = 2
     # else:
     #     Qord = 1
     Qord = 2
-    
-    # vci = 'VCI-C'
-    vci = None
+
+    vci = 'VCI-C'
+    # vci = None
     if (vci == 'VCI'):
         sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     elif (vci == 'VCI-C'):
         sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
-    
-    sim.computeSpatialDiscretization(f, NQX=NQX, NQY=NQY, Qord=Qord, 
+        # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCIold
+
+    sim.computeSpatialDiscretization(f, NQX=NQX, NQY=NQY, Qord=Qord,
         quadType='g', massLumping=False, includeBoundaries=True)
-    
+
     try:
         dxi.append(sim.xi[1:])
     except:
         pass
-    
+
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]} s')
     start_time = default_timer()
-    
+
     # Solve for the approximate solution
     # sim.u = sp_la.spsolve(sim.K, sim.b)
     tolerance = 1e-10
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=tolerance, atol=tolerance)
-    
+
     t_solve[iN] = default_timer()-start_time
     print(f'solve time = {t_solve[iN]} s')
     start_time = default_timer()
-    
+
     # compute the analytic solution and error norms
     uExact = f.solution(sim.DoFs)
-    
+
     E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf) / f.umax
     E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs) / f.umax
-    
+
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}')
     # print(f'cond(K) = {np.linalg.cond(sim.K.A)}')
@@ -325,20 +247,22 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
+# plt.title('Absolute Error')
 # field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
 #                       ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.X, sim.Y, F, shading='gouraud')
+plt.title('Final Solution')
 field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
-# x = np.linspace(0, sim.nodeX[-1], 100)
-# # for yi in [0.0, 0.1, 0.2]:
+x = np.linspace(0, sim.nodeX[-1], 100)
+for yi in [0.0]:
 # for yi in [sim.mapping(np.array((x, 0.5)), 0.) for x in sim.nodeX]:
-#     ax1.plot(x, [sim.mapping(np.array([[0, float(yi)]]), i) for i in x], 'k')
+    ax1.plot(x, [sim.mapping(np.array([[0, float(yi)]]), i) for i in x], 'k')
 # for xi in sim.nodeX:
 #     ax1.plot([xi, xi], [0, 1], 'k:')
 # ax.plot(sim.X[np.argmax(sim.U)], sim.Y[np.argmax(sim.U)],
 #   'g+', markersize=10)
-# cbar = plt.colorbar(field, format='%.0e')
 plt.ylim((0., 1.))
+# cbar = plt.colorbar(field, format='%.0e')
 cbar = plt.colorbar(field)
 cbar.formatter.set_powerlimits((0, 0))
 plt.xlabel(r'$x$')
@@ -346,11 +270,10 @@ plt.ylabel(r'$y$', rotation=0)
 if abs(f.xmax - 2*np.pi) < 1e-10:
     plt.xticks(np.linspace(0, f.xmax, 5),
         ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
-#  plt.xticks(np.linspace(0, 2*np.pi, 7), 
+#  plt.xticks(np.linspace(0, 2*np.pi, 7),
 #      ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
 else:
     plt.xticks(np.linspace(0, f.xmax, 6))
-plt.title('Absolute Error')
 plt.margins(0,0)
 
 # plot the error convergence
@@ -411,10 +334,10 @@ if (vci is not None):
 #               reshape(-1, sim.ndim) + 0.5 ) * [dx/NQX, 1/NQY]
 #     quadWeights = np.repeat(1., len(quads))
 #     for i in range(sim.ndim):
-#         quads = np.concatenate( 
+#         quads = np.concatenate(
 #             [quads + offset*np.eye(sim.ndim)[i] for offset in offsets[i]] )
 #         quadWeights = np.concatenate(
 #             [quadWeights * weight for weight in weights[i]] )
-    
+
 #     quads += [sim.nodeX[iPlane], 0]
 #     ax1.plot(quads[:,0], quads[:,1], 'k+')

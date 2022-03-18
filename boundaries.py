@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Mon Nov 15 15:46:03 2021
@@ -15,46 +14,50 @@ import warnings
 class Boundary(metaclass=ABCMeta):
     @property
     @abstractmethod
-    def name(self): 
+    def name(self):
         raise NotImplementedError
-    
+
     def __init__(self, sim):
         self.sim = sim
         self.nDoFs = self.nXnodes * self.nYnodes
-        
+
     @abstractmethod
     def __call__(self, p, iPlane):
         raise NotImplementedError
-    
+
     @abstractmethod
     def computeNodes(self):
         raise NotImplementedError
-        
+
+    @abstractmethod
+    def computeSliceBoundaryIntegrals(self, iPlane):
+        raise NotImplementedError
+
     def mapping(self, points, zeta=0.):
         return self.sim.mapping(points, zeta)
 
 
 class PeriodicBoundary(Boundary):
     @property
-    def name(self): 
+    def name(self):
         return 'periodic'
-    
+
     def __init__(self, sim):
         self.nXnodes = sim.NX
         self.nYnodes = sim.NY
         super().__init__(sim)
         self.nNodes = self.nDoFs
-    
+
     def computeNodes(self):
         self.DoFs = np.vstack( (np.repeat(self.sim.nodeX[:-1], self.sim.NY),
                                 self.sim.nodeY[:-1,:-1].ravel()) ).T
         return self.DoFs
-    
+
     def mapping(self, points, zeta=0.):
         # Note: negative numbers very close to zero (about -3.5e-10) may be
         # rounded to 1.0 after the 1st modulo, hence why the 2nd is needed.
         return self.sim.mapping(points, zeta) % 1 % 1
-    
+
     def __call__(self, p, iPlane=None):
         if iPlane is None:
             iPlane = np.searchsorted(self.sim.nodeX[1:], p[0])
@@ -68,11 +71,11 @@ class PeriodicBoundary(Boundary):
         nodeYp1 = self.sim.nodeY[iPlane + 1]
         idy = self.sim.idy[iPlane]
         idyp1 = self.sim.idy[iPlane + 1]
-        
+
         phis = np.empty(4)
         inds = np.empty(4, dtype='int')
         gradphis = np.empty((4,2))
-            
+
         ##### left #####
         mapL = float(self.mapping(p, nodeX))
         indL = (np.searchsorted(nodeY, mapL, side='right') - 1) % NY
@@ -80,8 +83,8 @@ class PeriodicBoundary(Boundary):
         phis[0] = 1 - phis[1]
         gradphis[1,1] = idy[indL]
         gradphis[0,1] = -gradphis[1,1]
-        inds[:2] = (indL + iPlane*NY, (indL + 1) % NY + iPlane*NY)        
-            
+        inds[:2] = (indL + iPlane*NY, (indL + 1) % NY + iPlane*NY)
+
         ##### right #####
         mapR = float(self.mapping(p, nodeXp1))
         indR = (np.searchsorted(nodeYp1, mapR, side='right') - 1) % NY
@@ -90,7 +93,7 @@ class PeriodicBoundary(Boundary):
         gradphis[3,1] = idyp1[indR]
         gradphis[2,1] = -gradphis[3,1]
         inds[2:] = ((indR + NY*(iPlane+1)) % nDoFs,
-                         ((indR+1) % NY + NY*(iPlane+1)) % nDoFs)
+                   ((indR+1) % NY + NY*(iPlane+1)) % nDoFs)
 
         gradRho = 1.0 / self.sim.dx[iPlane]
         gradphis[:,0] = np.array((-gradRho, -gradRho, gradRho, gradRho))
@@ -104,13 +107,31 @@ class PeriodicBoundary(Boundary):
         p.shape = originalShape
         return phis, gradphis, inds
 
+    def computeSliceBoundaryIntegrals(self, iPlane):
+        integrals = np.zeros((self.nNodes, 2))
+        dy = self.sim.dy
+        nYnodes = self.nYnodes
+        # left
+        leftInds = np.arange(iPlane*nYnodes, (iPlane+1)*nYnodes)
+        integrals[leftInds,0] -= dy[iPlane]
+        integrals[(leftInds + 1) % nYnodes + leftInds[0],0] -= dy[iPlane]
+        # right
+        if (iPlane == self.nXnodes - 1):
+            rightInds = np.arange(0, nYnodes)
+        else:
+            rightInds = np.arange((iPlane+1)*nYnodes, (iPlane+2)*nYnodes)
+        integrals[rightInds,0] += dy[iPlane+1]
+        integrals[(rightInds + 1) % nYnodes + rightInds[0],0] += dy[iPlane+1]
+
+        return 0.5*integrals
+
 
 class DirichletBoundary(Boundary):
     @property
-    def name(self): 
+    def name(self):
         return 'Dirichlet'
-    
-    def __init__(self, sim, g, B, NDX=None):
+
+    def __init__(self, sim, g, NDX=None):
         NX = sim.NX
         nodeX = sim.nodeX
         self.NDX = NDX
@@ -118,7 +139,7 @@ class DirichletBoundary(Boundary):
         self.nYnodes = sim.NY - 1
         super().__init__(sim)
         self.g = g
-        self.B = B
+        self.B = sim.mapping.B
         # gradphis[ind, x=0/y=1, dphi=0/drho=1]
         self.gradphis = np.empty((4,2,2))
         if NDX is None:
@@ -199,7 +220,7 @@ class DirichletBoundary(Boundary):
             bottomNodes.append(self.sim.xmax)
             topNodes.append(self.sim.xmax)
             self.DirichletNodeX = [np.sort(bottomNodes), np.sort(topNodes)]
-        
+
         self.nDirichletNodes = 2*self.nYnodes + self.DirichletNodeX[0].size \
                                               + self.DirichletNodeX[1].size
         self.nNodes = self.nDoFs + self.nDirichletNodes
@@ -228,7 +249,7 @@ class DirichletBoundary(Boundary):
             self.DirichletNodeX[1][-1::-1]
         self.nodes[nDoFs:-2*nYnodes - nBottomNodes,1] = 1.
         return self.nodes
-    
+
     def __call__(self, p, iPlane=None):
         if iPlane is None:
             iPlane = np.searchsorted(self.sim.nodeX[1:], p[0])
@@ -246,7 +267,7 @@ class DirichletBoundary(Boundary):
         self.gradphis.fill(0.0)
         gradRho = 1.0 / (nodeXp1 - nodeX)
         self.gradphis[:,0,1] = np.array((-gradRho, -gradRho, gradRho, gradRho))
-        
+
         # ignore warnings about nan's where p doesn't map to any boundaries
         with warnings.catch_warnings():
             warnings.filterwarnings('ignore', r'invalid value encountered in')
@@ -255,15 +276,15 @@ class DirichletBoundary(Boundary):
             zetaTop = float(zetaTop)
             isBoundaryBottom = (zetaBottom > nodeX) * (zetaBottom < nodeXp1)
             isBoundaryTop = (zetaTop > nodeX) * (zetaTop < nodeXp1)
-            
+
             if isBoundaryBottom and (zetaBottom <= p[0]):
                 zetaMinus = zetaBottom
                 isBoundaryMinus = True
-                dBdx, dBdy = self.B.deriv(p, 'bottom')
+                dBdx, dBdy = self.sim.mapping.dBbottom(p)
             if isBoundaryTop and (zetaTop <= p[0]):
                 zetaMinus = zetaTop
                 isBoundaryMinus = True
-                dBdx, dBdy = self.B.deriv(p, 'top')
+                dBdx, dBdy = self.sim.mapping.dBtop(p)
             if isBoundaryMinus:
                 DirichletNodeX = self.DirichletNodeX[int(isBoundaryTop)]
                 iR = np.searchsorted(DirichletNodeX, zetaMinus, side='right')
@@ -278,7 +299,7 @@ class DirichletBoundary(Boundary):
                     (nodeXp1 - zetaMinus + dBdx*(p[0] - nodeXp1)) / \
                     (zetaMinus - nodeXp1)**2
                 self.gradphis[:2,0,1] = -self.gradphis[2:,0,1]
-                
+
                 self.gradphis[0,1,0] = dBdy * idx
                 self.gradphis[1,1,0] = -self.gradphis[0,1,0]
                 self.gradphis[2:,1,1] = dBdy*(p[0] - nodeXp1) \
@@ -296,15 +317,15 @@ class DirichletBoundary(Boundary):
                 #     print(f'p0 = ({zeta0}, {float(isBoundaryTop)}),\t node = {self.sim.nodes[i0]})')
                 # if not np.allclose(np.array((zeta1, float(isBoundaryTop))), self.sim.nodes[i1]):
                 #     print(f'p1 = ({zeta1}, {float(isBoundaryTop)}),\t node = {self.sim.nodes[i1]})')
-            
+
             if isBoundaryBottom and (zetaBottom > p[0]):
                 zetaPlus = zetaBottom
                 isBoundaryPlus = True
-                dBdx, dBdy = self.B.deriv(p, 'bottom')
+                dBdx, dBdy = self.sim.mapping.dBbottom(p)
             if isBoundaryTop and (zetaTop > p[0]):
                 zetaPlus = zetaTop
                 isBoundaryPlus = True
-                dBdx, dBdy = self.B.deriv(p, 'top')
+                dBdx, dBdy = self.sim.mapping.dBtop(p)
             if isBoundaryPlus:
                 DirichletNodeX = self.DirichletNodeX[int(isBoundaryTop)]
                 iR = np.searchsorted(DirichletNodeX, zetaPlus, side='right')
@@ -319,13 +340,13 @@ class DirichletBoundary(Boundary):
                     (nodeX - zetaPlus + dBdx*(p[0] - nodeX)) / \
                     (zetaPlus - nodeX)**2
                 self.gradphis[2:,0,1] = -self.gradphis[:2,0,1]
-                
+
                 self.gradphis[2,1,0] = dBdy * idx
                 self.gradphis[3,1,0] = -self.gradphis[2,1,0]
                 self.gradphis[:2,1,1] = dBdy*(p[0] - nodeX) \
                                       / (zetaPlus - nodeX)**2
                 self.gradphis[2:,1,1] = -self.gradphis[:2,1,1]
-                
+
                 phis[2] = (zetaPlus - zeta3) * idx
                 phis[3] = 1 - phis[2]
                 g2 = self.g(np.array((zeta2, float(isBoundaryTop))))
@@ -338,7 +359,7 @@ class DirichletBoundary(Boundary):
                 #     print(f'p2 = ({zeta2}, {float(isBoundaryTop)}),\t node = {self.sim.nodes[i2]})')
                 # if not np.allclose(np.array((zeta3, float(isBoundaryTop))), self.sim.nodes[i3]):
                 #     print(f'p3 = ({zeta3}, {float(isBoundaryTop)}),\t node = {self.sim.nodes[i3]})')
-            
+
         if not isBoundaryMinus:
             zetaMinus = nodeX
             mapL = float(self.mapping(p, nodeX))
@@ -430,24 +451,77 @@ class DirichletBoundary(Boundary):
             else:
                 i3 += iPlane*nYnodes
         rho = (p[0] - zetaMinus) / (zetaPlus - zetaMinus)
-        
-        # print(f'p = {p}, inds = {np.array((i0, i1, i2, i3))}')
-        
+
         self.gradphis[:,:,1] *= phis.reshape(4,1)
         self.gradphis[:,:,0] *= np.array((1-rho, 1-rho, rho, rho)).reshape(4,1)
-        
+
         # At this point phis = phi_FEM, so we then multiply by ramp
         phis[0:2] *= (1 - rho)
         phis[2:4] *= rho
         p.shape = originalShape
+
+        # # these checks only true for boundary nodes if g() is unity function
+        # if (abs(np.sum(phis) - 1.0) > 1e-10):
+        #     print('Error: phis not forming partition of unity')
+        # if (abs(np.sum(self.gradphis)) > 1e-10):
+        #     print('Error: gradphis not summing to zero')
+        # print(f'p = {p}, inds = {np.array((i0, i1, i2, i3))}\n{self.nodes[np.array((i0, i1, i2, i3))]}')
+
         return phis, self.gradphis.sum(axis=-1), np.array((i0, i1, i2, i3))
+
+    def computeSliceBoundaryIntegrals(self, iPlane):
+        integrals = np.zeros((self.nNodes, 2))
+        dy = self.sim.dy
+        nYnodes = self.nYnodes
+        nodeX = self.sim.nodeX
+        DirichletNodeX = self.DirichletNodeX
+        boundaryIndsList = []
+        # left
+        leftInds = np.arange((iPlane-1)*nYnodes, iPlane*nYnodes)
+        if (iPlane == 0):
+            leftInds = np.flip(leftInds)
+            boundaryIndsList.append(leftInds)
+        integrals[leftInds,0] -= (dy[iPlane,:-1] + dy[iPlane,1:])
+        # right
+        rightInds = np.arange(iPlane*nYnodes, (iPlane+1)*nYnodes)
+        if (iPlane == self.nXnodes):
+            rightInds = self.nDoFs - rightInds - nYnodes - 1
+            boundaryIndsList.append(rightInds)
+        integrals[rightInds,0] += dy[iPlane+1,:-1] + dy[iPlane+1,1:]
+        # bottom
+        DbottomInds = np.where((DirichletNodeX[0] >= nodeX[iPlane]) *
+                               (DirichletNodeX[0] <= nodeX[iPlane+1]))[0]
+        bottomdx = DirichletNodeX[0][DbottomInds[1:]] \
+                 - DirichletNodeX[0][DbottomInds[:-1]]
+        bottomInds = -DbottomInds - 2*nYnodes - 1
+        integrals[bottomInds[ :-1],1] -= bottomdx
+        integrals[bottomInds[1:  ],1] -= bottomdx
+        integrals[bottomInds[0] ,0] -= dy[iPlane  ,0]
+        integrals[bottomInds[-1],0] += dy[iPlane+1,0]
+        # top
+        DtopInds = np.where((DirichletNodeX[1] >= nodeX[iPlane]) *
+                            (DirichletNodeX[1] <= nodeX[iPlane+1]))[0]
+        topdx = DirichletNodeX[1][DtopInds[1:]] \
+              - DirichletNodeX[1][DtopInds[:-1]]
+        topInds = -DtopInds - 2*nYnodes - DirichletNodeX[0].size - 1
+        integrals[topInds[ :-1],1] += topdx
+        integrals[topInds[1:  ],1] += topdx
+        integrals[topInds[0] ,0] -= dy[iPlane  ,-1]
+        integrals[topInds[-1],0] += dy[iPlane+1,-1]
+
+        boundaryIndsList.extend((bottomInds, topInds))
+        boundaryInds = np.concatenate(boundaryIndsList)
+        integrals[boundaryInds] *= \
+            self.g(self.nodes[boundaryInds]).reshape(-1,1)
+
+        return 0.5*integrals
 
 
 class DirichletXPeriodicYBoundary(Boundary):
     @property
-    def name(self): 
+    def name(self):
         return 'DirichletXPeriodicY'
-    
+
     def __init__(self, sim, g):
         self.nXnodes = sim.NX - 1
         self.nYnodes = sim.NY
@@ -471,12 +545,12 @@ class DirichletXPeriodicYBoundary(Boundary):
         self.nodes[-2*nYnodes:-nYnodes] = np.vstack((
             np.full(nYnodes, self.sim.xmax), nodeY[-1][-2::-1] )).T
         return self.nodes
-    
+
     def mapping(self, points, zeta=0.):
         # Note: negative numbers very close to zero (about -3.5e-10) may be
         # rounded to 1.0 after the 1st modulo, hence why the 2nd is needed.
         return self.sim.mapping(points, zeta) % 1 % 1
-    
+
     def __call__(self, p, iPlane=None):
         if iPlane is None:
             iPlane = np.searchsorted(self.sim.nodeX[1:], p[0])
@@ -490,11 +564,11 @@ class DirichletXPeriodicYBoundary(Boundary):
         nodeYp1 = self.sim.nodeY[iPlane + 1]
         idy = self.sim.idy[iPlane]
         idyp1 = self.sim.idy[iPlane + 1]
-        
+
         phis = np.empty(4)
         inds = np.empty(4, dtype='int')
         gradphis = np.empty((4,2))
-            
+
         ##### left #####
         mapL = float(self.mapping(p, nodeX))
         indL = (np.searchsorted(nodeY, mapL, side='right') - 1) % NY
@@ -511,7 +585,7 @@ class DirichletXPeriodicYBoundary(Boundary):
             gradphis[0,1] *= g0
             gradphis[1,1] *= g1
             inds[0] = -indL % -NY - 1
-            inds[1] = inds[0] % -NY - 1 
+            inds[1] = inds[0] % -NY - 1
             # if not np.allclose(np.array((nodeX, nodeY[indL])), self.sim.nodes[inds[0]]):
             #     print(f'p0 = ({nodeX}, {nodeY[indL]}),\t node = {self.sim.nodes[inds[0]]})')
             # if not np.allclose(np.array((nodeX, nodeY[indL+1]%1)), self.sim.nodes[inds[1]]):
@@ -520,7 +594,7 @@ class DirichletXPeriodicYBoundary(Boundary):
             inds[:2] = (indL + (iPlane-1)*NY, (indL + 1) % NY + (iPlane-1)*NY)
             # if np.any(inds[:2] >= nDoFs):
             #     print(f'invalid index in {inds[:2]}')
-            
+
         ##### right #####
         mapR = float(self.mapping(p, nodeXp1))
         indR = (np.searchsorted(nodeYp1, mapR, side='right') - 1) % NY
@@ -559,3 +633,27 @@ class DirichletXPeriodicYBoundary(Boundary):
         phis *= rhos
         p.shape = originalShape
         return phis, gradphis, inds
+
+    def computeSliceBoundaryIntegrals(self, iPlane):
+        integrals = np.zeros((self.nNodes, 2))
+        dy = self.sim.dy
+        nYnodes = self.nYnodes
+        # left
+        leftInds = np.arange((iPlane-1)*nYnodes, iPlane*nYnodes)
+        if (iPlane == 0):
+            leftInds = np.flip(leftInds)
+        integrals[leftInds,0] -= dy[iPlane]
+        integrals[np.roll(leftInds, -1),0] -= dy[iPlane]
+        # right
+        rightInds = np.arange(iPlane*nYnodes, (iPlane+1)*nYnodes)
+        if (iPlane == self.nXnodes):
+            rightInds = self.nDoFs - rightInds - nYnodes - 1
+        integrals[rightInds,0] += dy[iPlane+1]
+        integrals[np.roll(rightInds, -1),0] += dy[iPlane+1]
+
+        if (iPlane == 0):
+            integrals[leftInds] *= self.g(self.nodes[leftInds]).reshape(-1,1)
+        elif (iPlane == self.nXnodes):
+            integrals[rightInds] *= self.g(self.nodes[rightInds]).reshape(-1,1)
+
+        return 0.5*integrals

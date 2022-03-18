@@ -2,7 +2,7 @@
 """
 Created on Mon May 17 17:46:29 2021
 
-@author: samal
+@author: Samuel A. Maloney
 """
 
 import numpy as np
@@ -12,8 +12,9 @@ import matplotlib.pyplot as plt
 # Left and bottom borders and centre point constrained
 # f(x,y) = sin(2pi*x)sin(2pi*y)
 # Omega = (0,1) X (0,1)
+# periodic BCs
 # SinusoidalMapping(0.2, -0.25, 1.0)
-# NY = NX, NQY = NY, NQX = NDX = 1, quadType = 'gauss', massLumping = False
+# NY = NX, NQY = NY, NQX = 1, quadType = 'gauss', massLumping = False
 NX = np.array([  4,   8,  16,  32,  64, 128, 256])
 
 
@@ -85,14 +86,26 @@ t_solve_R.append(np.array([7.15006958e-04, 1.95295701e-03, 3.98603699e-03, 9.364
        2.52552710e-02, 1.49755277e-01, 9.61586514e-01]))
 labels_R.append(r'Q3 VC2')
 
-E_2_R.append(np.array([2.09907986e-01, 5.46742486e-02, 1.47418030e-02, 3.70483173e-03,
-       1.02687456e-03, 2.10687836e-04, 5.90265833e-05]))
-E_inf_R.append(np.array([4.57241765e-01, 1.58905612e-01, 4.21797726e-02, 1.44004039e-02,
-       3.55452072e-03, 8.41678939e-04, 2.22708221e-04]))
-t_setup_R.append(np.array([6.62901850e-02, 6.34597780e-02, 2.37282159e-01, 1.03900382e+00,
-       4.21067669e+00, 1.82577712e+01, 8.75533591e+01]))
-t_solve_R.append(np.array([1.32109004e-03, 1.66552595e-03, 4.07421007e-03, 8.94560793e-03,
-       2.54322201e-02, 1.44350352e-01, 1.02197056e+00]))
+# E_2_R.append(np.array([2.09907986e-01, 5.46742486e-02, 1.47418030e-02, 3.70483173e-03,
+#        1.02687456e-03, 2.10687836e-04, 5.90265833e-05]))
+# E_inf_R.append(np.array([4.57241765e-01, 1.58905612e-01, 4.21797726e-02, 1.44004039e-02,
+#        3.55452072e-03, 8.41678939e-04, 2.22708221e-04]))
+# t_setup_R.append(np.array([6.62901850e-02, 6.34597780e-02, 2.37282159e-01, 1.03900382e+00,
+#        4.21067669e+00, 1.82577712e+01, 8.75533591e+01]))
+# t_solve_R.append(np.array([1.32109004e-03, 1.66552595e-03, 4.07421007e-03, 8.94560793e-03,
+#        2.54322201e-02, 1.44350352e-01, 1.02197056e+00]))
+# labels_R.append(r'Q3 VC1-C')
+
+# n.b. these timings use conda spyder install and are much slower/not comparable to others
+# Using slice-by-slice VCI-C method
+E_2_R.append(np.array([2.24730967e-01, 5.78038318e-02, 1.54399525e-02, 3.78086314e-03,
+        1.03981626e-03, 2.68411373e-04, 6.98601365e-05]))
+E_inf_R.append(np.array([5.18181108e-01, 1.70584387e-01, 3.88742527e-02, 1.11035762e-02,
+        3.34560401e-03, 9.07360842e-04, 2.28819525e-04]))
+t_setup_R.append(np.array([4.50561600e-02, 1.68772199e-01, 6.39779512e-01, 2.53059033e+00,
+        1.00745427e+01, 4.04720636e+01, 1.62557906e+02]))
+t_solve_R.append(np.array([7.62570999e-04, 1.73928900e-03, 3.85338700e-03, 8.39876299e-03,
+        2.43427050e-02, 1.20427147e-01, 8.17088706e-01]))
 labels_R.append(r'Q3 VC1-C')
 
 
@@ -155,7 +168,7 @@ Nstep = 2
 for i, error in enumerate(E_2_L):
     axL1.semilogy(N[inds], error[inds], label=labels_L[i],
                   linewidth=solid_linewidth)
-    
+
     logE = np.log(error[inds])
     order = (logE[:-1] - logE[1:])/(logN[1:] - logN[:-1])
     axL2.plot(intraN, order, linestyle=':', label=labels_L[i],
@@ -167,17 +180,17 @@ axL1.set_xlabel(r'$\log_2(N_xN_y)$')
 axL1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axL2.set_ylabel(r'Intra-step Order of Convergence')
 axL1.legend(loc='lower left')
-axL1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)/Nstep + 1))
+axL1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
 ordb = 0
 ordt = 2.5
 ordstep = 0.5
 axL2.set_ylim(ordb, ordt)
-axL2.set_yticks(np.linspace(ordb, ordt, (ordt - ordb)/ordstep + 1))
+axL2.set_yticks(np.linspace(ordb, ordt, int((ordt - ordb)/ordstep) + 1))
 
 for i, error in enumerate(E_2_R):
     axR1.semilogy(N[inds], error[inds], label=labels_R[i],
                   linewidth=solid_linewidth)
-    
+
     logE = np.log(error[inds])
     order = (logE[:-1] - logE[1:])/(logN[1:] - logN[:-1])
     axR2.plot(intraN, order, linestyle=':', label=labels_R[i],
@@ -189,9 +202,9 @@ axR1.set_xlabel(r'$\log_2(N_xN_y)$')
 axR1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axR2.set_ylabel(r'Intra-step Order of Convergence')
 axR1.legend(loc='lower left')
-axR1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)/Nstep + 1))
+axR1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
 axR2.set_ylim(ordb, ordt)
-axR2.set_yticks(np.linspace(ordb, ordt, (ordt - ordb)/ordstep + 1))
+axL2.set_yticks(np.linspace(ordb, ordt, int((ordt - ordb)/ordstep) + 1))
 
 ylimL = axL1.get_ylim()
 ylimR = axR1.get_ylim()
@@ -201,4 +214,4 @@ axR1.set_ylim(min(ylimL[0],ylimR[0]), max(ylimL[1],ylimR[1]))
 # axL1.set_ylim(1e-6, 1e-2)
 # axR1.set_ylim(1e-6, 1e-2)
 
-# fig.savefig("Poisson_VCI_conv.pdf", bbox_inches = 'tight', pad_inches = 0)
+fig.savefig("Poisson_VCI_conv.pdf", bbox_inches = 'tight', pad_inches = 0)

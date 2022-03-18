@@ -44,70 +44,7 @@ class QuadraticTestProblem:
 f = QuadraticTestProblem()
 duRatio = f.dudyMax / f.dudxMax
 
-class QaudraticBoundaryFunction:
-    
-    def __init__(self, a, b=0.):
-        self.a = a
-        self.b = b
-        if b == 0.:
-            self.inva = 1/a
-            self.deriv = self.deriv0
-            # # This doesn't work
-            # self.__call__ = self.call0
-    
-    def __call__(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        a = self.a
-        b = self.b
-        zetaBottom = (-b + np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x)))/(2*a)
-        zetaTop = (-b + np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x - 1)))/(2*a)
-        return zetaBottom, zetaTop
-    
-    def deriv(self, p, boundary):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        a = self.a
-        b = self.b
-        if boundary == 'bottom':
-            dBdy = -1 / np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x))
-            dBdx = -(2*a*x + b) * dBdy
-        elif boundary == 'top':
-            dBdy = -1 / np.sqrt(b**2 - 4*a*(y - a*x**2 - b*x - 1))
-            dBdx = -(2*a*x + b) * dBdy
-        return dBdx, dBdy
-    
-    def call0(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        zetaBottom = np.sqrt(x**2 - self.inva*y)
-        zetaTop = np.sqrt(x**2 + self.inva*(1 - y))
-        return zetaBottom, zetaTop
-    
-    def deriv0(self, p, boundary):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        if boundary == 'bottom':
-            dBdx = x / np.sqrt(x**2 - self.inva*y)
-            dBdy = -0.5*self.inva / np.sqrt(x**2 - self.inva*y)
-        elif boundary == 'top':
-            dBdx = x / np.sqrt(x**2 + self.inva*(1 - y))
-            dBdy = -0.5*self.inva / np.sqrt(x**2 + self.inva*(1 - y))
-        return dBdx, dBdy
-
-class StraightBoundaryFunction:
-    def __call__(self, p):
-        nPoints = p.size // 2
-        return np.full(nPoints, np.nan), np.full(nPoints, np.nan)
-    
-    def deriv(self, p, boundary):
-        # this should never be used, just return dummy values
-        return (1., 1.)
-
-# B = StraightBoundaryFunction()
 # mapping = fcifem.mappings.StraightMapping()
-    
-B = QaudraticBoundaryFunction(f.a, f.b)
 mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
 perturbation = 0.1
@@ -123,12 +60,12 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 6
+stop = 7
 nSamples = stop - start + 1
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int32')
 E_inf = np.empty(nSamples, dtype='float64')
 E_2 = np.empty(nSamples, dtype='float64')
-NYratio = 16
+NYratio = 1
 # NYratio = np.rint(f.dudyMax / f.xmax).astype('int')
 
 # loop over N to test convergence where N is the number of
@@ -137,12 +74,12 @@ NYratio = 16
 for iN, NX in enumerate(NX_array):
     
     NY = NYratio * NX
-    # NDX = 1
-    NDX = max(np.rint(f.xmax*NYratio / duRatio).astype('int'), 1)
+    NDX = 1
+    # NDX = max(np.rint(f.xmax*NYratio / duRatio).astype('int'), 1)
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
-    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, B, NDX=NDX)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, NDX=NDX)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
     
     print(f'NX = {NX}, \tNY = {NY}, \tnDoFs = {sim.nDoFs}')
@@ -152,7 +89,7 @@ for iN, NX in enumerate(NX_array):
     #     Qord = 2
     # else:
     #     Qord = 1
-    Qord = 1
+    Qord = 2
     sim.computeSpatialDiscretization(f.solution, NQX=NDX, NQY=NY, Qord=Qord,
                                      quadType='g', massLumping=False)
     
@@ -256,27 +193,4 @@ lines2, labels2 = ax2.get_legend_handles_labels()
 ax2.legend(lines + lines2, labels + labels2, loc='best')
 plt.margins(0,0)
 
-# plt.savefig("CD_MassLumped_RK4.pdf",
-#     bbox_inches = 'tight', pad_inches = 0)
-
-# For all of the below
-# NX_array = np.array([  4,   8,  16,  32,  64, 128, 256])
-# NY = NX
-
-# # Uniform spacing, Nquad=5
-# E_2 = np.array([1.17817353e-01, 9.85576979e-02, 2.45978802e-02, 6.02352877e-03,
-#        1.49687962e-03, 3.73653269e-04, 9.33777137e-05])
-# E_inf = np.array([2.35634705e-01, 1.74694642e-01, 4.76311914e-02, 1.16460444e-02,
-#        2.89217058e-03, 7.21715652e-04, 1.80346973e-04])
-
-# # 0.1 perturbation, Nquad=5
-# E_2 = np.array([1.34140716e-01, 1.02430887e-01, 2.53661338e-02, 6.15948128e-03,
-#        1.52570919e-03, 3.80520484e-04, 9.52952878e-05])
-# E_inf = np.array([2.42670205e-01, 1.84218885e-01, 5.24279763e-02, 1.34969241e-02,
-#        3.40146362e-03, 9.10205975e-04, 2.26928637e-04])
-
-# # 0.5 perturbation, Nquad=5
-# E_2 = np.array([3.32304951e-01, 1.58513739e-01, 3.94981765e-02, 9.56499954e-03,
-#        2.23580423e-03, 5.46624171e-04, 1.40440403e-04])
-# E_inf = np.array([5.36106904e-01, 3.84477693e-01, 1.21872302e-01, 3.14200379e-02,
-#        7.67059713e-03, 2.10334214e-03, 5.30771969e-04])
+# plt.savefig("CD_MassLumped_RK4.pdf", bbox_inches = 'tight', pad_inches = 0)

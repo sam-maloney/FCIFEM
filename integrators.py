@@ -14,7 +14,7 @@ from abc import ABCMeta, abstractmethod
 
 class Integrator(metaclass=ABCMeta):
     """Class for time integration of the temporal ODE discretization.
-    
+
     Attributes
     ----------
     LHS : scipy.sparse.csr_matrix
@@ -29,20 +29,36 @@ class Integrator(metaclass=ABCMeta):
         Current timestep of the simulation.
     time : float
         Current time of the simulation; equal to timestep*dt.
-    
+    sim : FciFemSim
+        Parent simulation class to which the integrator belongs.
+
     """
-    
+
     @property
     @abstractmethod
     def name(self):
         raise NotImplementedError
 
     def __init__(self, fciFemSim, dt):
+        """Initialize attributes of the time-integration scheme.
+
+        Parameters
+        ----------
+        fciFemSim : FciFemSim
+            Parent simulation class to which the integrator belongs.
+        dt : float
+            Time interval between each successive timestep.
+
+        Returns
+        -------
+        None.
+
+        """
         self.sim = fciFemSim
         self.time = 0.0
         self.timestep = 0
         self.dt = dt
-        
+
     def precondition(self, P='ilu', **kwargs):
         """Generate and/or store the preconditioning matrix P.
 
@@ -75,10 +91,10 @@ class Integrator(metaclass=ABCMeta):
         else:
             self.P = P
             self.preconditioner = 'UserDefined'
-    
+
     def cond(self, order=2):
         """Compute the condition number of the LHS matrix of the solver.
-        
+
         Parameters
         ----------
         order : {int, inf, -inf, ‘fro’}, optional
@@ -104,10 +120,10 @@ class Integrator(metaclass=ABCMeta):
             else: # A is dense
                 c = la.norm(A, order) * la.norm(la.inv(A), order)
         return c
-    
+
     def step(self, nSteps = 1, **kwargs):
         """Integrate solution a given number of timesteps.
-        
+
         Default implementation given for basic one-step schemes, but can be
         overriden for multi-step schemes as needed.
 
@@ -134,8 +150,8 @@ class Integrator(metaclass=ABCMeta):
                 print(f'TS {self.timestep}: solution failed with error '
                       f'code {info}')
         self.time = self.timestep * self.dt
-        
-        
+
+
 class BackwardEuler(Integrator):
     @property
     def name(self): return 'BackwardEuler'
@@ -177,7 +193,7 @@ class LowStorageRK(Integrator):
             self.LHS = M
             self.step = self.stepNotMassLumped
             self.precondition(P, **kwargs)
-    
+
     def stepNotMassLumped(self, nSteps = 1, **kwargs):
         kwargs["M"] = self.P
         for i in range(nSteps):
@@ -193,7 +209,7 @@ class LowStorageRK(Integrator):
             self.sim.u = uTemp
             self.timestep += 1
         self.time = self.timestep * self.dt
-        
+
     def stepMassLumped(self, nSteps = 1, **kwargs):
         for i in range(nSteps):
             uTemp = self.sim.u

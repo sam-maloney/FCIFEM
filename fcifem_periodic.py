@@ -23,7 +23,7 @@ class FciFemSim:
     """Class for flux-coordinate independent FEM (FCIFEM) method.
     Implements the convection-diffusion equation on a rectangular domain
     [x, y] = [0...2*pi, 0...1] with doubly-periodic boundary conditions.
-    
+
     Attributes
     ----------
     NX : int
@@ -68,9 +68,9 @@ class FciFemSim:
     b : numpy.ndarray, shape=(nDoFs,)
         RHS forcing vector generated from forcing function f.
     integrator : Integrator
-        Object defining time-integration scheme to be used. 
+        Object defining time-integration scheme to be used.
     """
-    
+
     def __init__(self, NX, NY, mapping, velocity, diffusivity=0.,
                  px=0., py=0., seed=None, xmax=2*np.pi, **kwargs):
         """Initialize attributes of FCIFEM simulation class
@@ -105,7 +105,7 @@ class FciFemSim:
             The default is 2*np.pi.
         **kwargs
             Keyword arguments
-            
+
         """
         NX = int(NX) # 'numpy.int**' classes can cause problems with SuiteSparse
         NY = int(NY)
@@ -139,10 +139,10 @@ class FciFemSim:
         self.nNodes = self.nDoFs
         self.dx = self.nodeX[1:] - self.nodeX[0:-1]
         self.idy = 1. / (self.nodeY[:,1:] - self.nodeY[:,:-1])
-    
+
     def setInitialConditions(self, u0, mapped=True):
         """Initialize the nodal coefficients for the given IC.
-        
+
         Parameters
         ----------
         u0 : {numpy.ndarray, callable}
@@ -180,15 +180,15 @@ class FciFemSim:
                 f"or a callable object returning such an array and taking as "
                 f"input the array of node coordinates with shape "
                 f"({self.nDoFs}, {self.ndim}).")
-   
+
     def computeSpatialDiscretization(self, f=None, NQX=1, NQY=None, Qord=2,
                                       quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
-        
+
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
         M is the mass matrix from the time derivative
-        
+
         Parameters
         ----------
         f : {callable, None}, optional
@@ -240,7 +240,7 @@ class FciFemSim:
         col_ind = np.zeros(nMaxEntries, dtype='int')
         self.b = np.zeros(nDoFs)
         self.u_weights = np.zeros(nDoFs)
-        
+
         ##### compute spatial discretizaton
         index = 0
         for iPlane in range(NX):
@@ -258,7 +258,7 @@ class FciFemSim:
                       reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
             quadWeights = np.repeat(1., len(quads))
             for i in range(ndim):
-                quads = np.concatenate( 
+                quads = np.concatenate(
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
@@ -271,47 +271,47 @@ class FciFemSim:
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
             phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
-            
+
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
-            
+
             for iQ, quad in enumerate(quads):
                 phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
                                   (  phiLY[iQ]  , (1-phiX[iQ])),
                                   ((1-phiRY[iQ]),   phiX[iQ]  ),
                                   (  phiRY[iQ]  ,   phiX[iQ]  )))
-                
+
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
                                       -self.idy[iPlane + 1][indR[iQ]],
                                       self.idy[iPlane + 1][indR[iQ]])
                 gradphis = gradTemplate * phis
-                
+
                 # Gradients along the coordinate direction
                 gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
-            
+
                 phis = np.prod(phis, axis=1)
                 indices = np.array([indL[iQ] + NY*iPlane,
                                     (indL[iQ]+1) % NY + NY*iPlane,
                                     (indR[iQ] + NY*(iPlane+1)) % nDoFs,
                                     ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nDoFs])
-                Kdata[index:index+nEntries] = ( quadWeights[iQ] * 
+                Kdata[index:index+nEntries] = ( quadWeights[iQ] *
                     np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
                 Adata[index:index+nEntries] = ( quadWeights[iQ] *
                     np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
                 if not massLumping:
-                    Mdata[index:index+nEntries] = ( quadWeights[iQ] * 
+                    Mdata[index:index+nEntries] = ( quadWeights[iQ] *
                         np.outer(phis, phis).ravel() )
                 row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
                 col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
-                
+
                 self.u_weights[indices] += quadWeights[iQ] * phis
-                
+
                 index += nEntries
                 if f is not None:
                     self.b[indices] += f(quad) * phis * quadWeights[iQ]
-        
+
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
@@ -321,17 +321,17 @@ class FciFemSim:
         else:
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
-    
+
     def computeSpatialDiscretizationLinearVCI(self, f=None, NQX=1, NQY=None, Qord=2,
                                       quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
         Implements linear variationally consistent integration using assumed
         strain method of Chen2013 https://doi.org/10.1002/nme.4512
-        
+
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
         M is the mass matrix from the time derivative
-        
+
         Parameters
         ----------
         f : {callable, None}, optional
@@ -383,11 +383,11 @@ class FciFemSim:
         col_ind = np.zeros(nMaxEntries, dtype='int')
         self.b = np.zeros(nDoFs)
         self.u_weights = np.zeros(nDoFs)
-        
+
         self.store = []
         self.areas = np.zeros(nDoFs)
         self.xis = np.zeros((self.nDoFs, self.ndim))
-        
+
         ##### compute spatial discretizaton
         index = 0
         for iPlane in range(NX):
@@ -399,15 +399,15 @@ class FciFemSim:
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
                 weights = np.repeat(2/Qord, Qord)
-            
+
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
                       reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
             quadWeights = np.repeat(1., len(quads))
-            
+
             for i in range(ndim):
-                quads = np.concatenate( 
+                quads = np.concatenate(
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
@@ -419,26 +419,26 @@ class FciFemSim:
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
             phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
-            
+
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
-            
+
             for iQ, quad in enumerate(quads):
                 phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
                                   (  phiLY[iQ]  , (1-phiX[iQ])),
                                   ((1-phiRY[iQ]),   phiX[iQ]  ),
                                   (  phiRY[iQ]  ,   phiX[iQ]  )))
-                
+
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
                                       -self.idy[iPlane + 1][indR[iQ]],
                                       self.idy[iPlane + 1][indR[iQ]])
                 gradphis = gradTemplate * phis
-                
+
                 # Gradients along the coordinate direction
                 gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
-            
+
                 phis = np.prod(phis, axis=1)
                 indices = np.array([indL[iQ] + NY*iPlane,
                                     (indL[iQ]+1) % NY + NY*iPlane,
@@ -447,27 +447,27 @@ class FciFemSim:
                 quadWeight = quadWeights[iQ]
                 self.store.append((indices, phis, gradphis, quadWeight))
                 self.areas[indices] += quadWeight
-                self.xis[indices] -= gradphis * quadWeight                
+                self.xis[indices] -= gradphis * quadWeight
                 self.u_weights[indices] += quadWeight * phis
-                
+
                 if f is not None:
                     self.b[indices] += f(quad) * phis * quadWeight
-        
+
         self.xis /= self.areas.reshape(-1,1)
-        
+
         for iQ, (indices, phis, gradphis, quadWeight) in enumerate(self.store):
             testgrads = gradphis + self.xis[indices]
-            Kdata[index:index+nEntries] = ( quadWeight * 
+            Kdata[index:index+nEntries] = ( quadWeight *
                 np.ravel( testgrads @ (self.diffusivity @ gradphis.T) ) )
             Adata[index:index+nEntries] = ( quadWeight *
                 np.outer(np.dot(testgrads, self.velocity), phis).ravel() )
             if not massLumping:
-                Mdata[index:index+nEntries] = ( quadWeight * 
+                Mdata[index:index+nEntries] = ( quadWeight *
                     np.outer(phis, phis).ravel() )
             row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
             col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
             index += nEntries
-        
+
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
@@ -477,17 +477,17 @@ class FciFemSim:
         else:
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
-    
+
     def computeSpatialDiscretizationQuadraticVCI(self, f=None, NQX=1, NQY=None, Qord=2,
                                       quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
         Implements quadratic variationally consistent integration using assumed
         strain method of Chen2013 https://doi.org/10.1002/nme.4512
-        
+
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
         M is the mass matrix from the time derivative
-        
+
         Parameters
         ----------
         f : {callable, None}, optional
@@ -539,12 +539,12 @@ class FciFemSim:
         col_ind = np.zeros(nMaxEntries, dtype='int')
         self.b = np.zeros(nDoFs)
         self.u_weights = np.zeros(nDoFs)
-        
+
         self.store = []
         A = np.zeros((self.nDoFs, 3, 3))
         r = np.zeros((self.nDoFs, self.ndim, 3))
         self.xi = np.empty((self.nDoFs, self.ndim, 3))
-        
+
         ##### compute spatial discretizaton
         index = 0
         for iPlane in range(NX):
@@ -557,15 +557,15 @@ class FciFemSim:
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
                 weights = np.repeat(2/Qord, Qord)
-            
+
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
                       reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
             quadWeights = np.repeat(1., len(quads))
-            
+
             for i in range(ndim):
-                quads = np.concatenate( 
+                quads = np.concatenate(
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
@@ -577,39 +577,39 @@ class FciFemSim:
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
             phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
-            
+
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
-            
+
             for iQ, quad in enumerate(quads):
                 phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
                                   (  phiLY[iQ]  , (1-phiX[iQ])),
                                   ((1-phiRY[iQ]),   phiX[iQ]  ),
                                   (  phiRY[iQ]  ,   phiX[iQ]  )))
-                
+
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
                                       -self.idy[iPlane + 1][indR[iQ]],
                                       self.idy[iPlane + 1][indR[iQ]])
                 gradphis = gradTemplate * phis
-                
+
                 # Gradients along the coordinate direction
                 gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
-            
+
                 phis = np.prod(phis, axis=1)
                 indices = np.array([indL[iQ] + NY*iPlane,
                                     (indL[iQ]+1) % NY + NY*iPlane,
                                     (indR[iQ] + NY*(iPlane+1)) % nDoFs,
                                     ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nDoFs])
-                quadWeight = quadWeights[iQ]               
+                quadWeight = quadWeights[iQ]
                 self.u_weights[indices] += quadWeight * phis
-                
+
                 disps = np.array(((quad[0] - nodeX,  quad[1] - self.nodeY[iPlane][indL[iQ]]),
                                   (quad[0] - nodeX,  quad[1] - self.nodeY[iPlane][indL[iQ]+1]),
                                   (quad[0] - nodeX1, quad[1] - self.nodeY[iPlane+1][indR[iQ]]),
                                   (quad[0] - nodeX1, quad[1] - self.nodeY[iPlane+1][indR[iQ]+1])))
-                
+
                 self.store.append((indices, gradphis, disps, quadWeight))
                 P = np.hstack((np.ones((len(indices), 1)), disps))
                 A[indices] += quadWeight * \
@@ -619,32 +619,32 @@ class FciFemSim:
                 r[indices,1,2] -= phis * quadWeight
                 r[indices,:,1:3] -= np.apply_along_axis(lambda x: np.outer(x[0:2],
                     x[2:4]), 1, np.hstack((gradphis, disps))) * quadWeight
-                
+
                 if f is not None:
                     self.b[indices] += f(quad) * phis * quadWeight
-                
+
         for i, row in enumerate(A):
             lu, piv = la.lu_factor(A[i], True, False)
             for j in range(self.ndim):
                 self.xi[i,j] = la.lu_solve((lu, piv), r[i,j], 0, True, False)
-        
+
         for iQ, (indices, gradphis, disps, quadWeight) in enumerate(self.store):
             testgrads = (gradphis + self.xi[indices,:,0] +
                     self.xi[indices,:,1] * disps[:,0:1] +
                     self.xi[indices,:,2] * disps[:,1:2])
-            
+
             Kdata[index:index+nEntries] = quadWeight * \
                 np.ravel(testgrads @ (self.diffusivity @ gradphis.T))
             Adata[index:index+nEntries] = ( quadWeight *
                 np.outer(np.dot(testgrads, self.velocity), phis).ravel() )
-            
+
             if not massLumping:
-                Mdata[index:index+nEntries] = ( quadWeight * 
+                Mdata[index:index+nEntries] = ( quadWeight *
                     np.outer(phis, phis).ravel() )
             row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
             col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
             index += nEntries
-        
+
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
@@ -654,15 +654,15 @@ class FciFemSim:
         else:
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
-            
+
     def computeSpatialDiscretizationConservativeNodeVCI(self, f=None, NQX=1, NQY=None, Qord=2,
                                       quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
-        
+
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
         M is the mass matrix from the time derivative
-        
+
         Parameters
         ----------
         f : {callable, None}, optional
@@ -701,20 +701,20 @@ class FciFemSim:
         self.NQY = NQY
         self.Qord = Qord
         self.quadType = quadType
-        self.massLumping = massLumping            # Kdata[index:index+nEntries] = ( quadWeight * 
+        self.massLumping = massLumping            # Kdata[index:index+nEntries] = ( quadWeight *
             #     np.ravel( gradphis @ (self.diffusivity @ testgrads.T) ) )
         nQuads = NQX * NQY * Qord**2
-        
+
         self.store = []
         self.gradphiSums = np.zeros((nDoFs, ndim))
         self.gradphiSumsNew = np.zeros((nDoFs, ndim))
-        
+
         self.nCells = 2*nDoFs
         nCells = self.nCells
         gd = np.empty(16*nQuads*NX)
         ri = np.empty(16*nQuads*NX, dtype='int64')
         ci = np.empty(16*nQuads*NX, dtype='int64')
-        
+
         ##### compute spatial discretizaton
         index = 0
         for iPlane in range(NX):
@@ -726,15 +726,15 @@ class FciFemSim:
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
                 weights = np.repeat(2/Qord, Qord)
-            
+
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
                       reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
             quadWeights = np.repeat(1., len(quads))
-            
+
             for i in range(ndim):
-                quads = np.concatenate( 
+                quads = np.concatenate(
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
@@ -746,26 +746,26 @@ class FciFemSim:
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
             phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
-            
+
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
-            
+
             for iQ, quad in enumerate(quads):
                 phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
                                   (  phiLY[iQ]  , (1-phiX[iQ])),
                                   ((1-phiRY[iQ]),   phiX[iQ]  ),
                                   (  phiRY[iQ]  ,   phiX[iQ]  )))
-                
+
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
                                       -self.idy[iPlane + 1][indR[iQ]],
                                       self.idy[iPlane + 1][indR[iQ]])
                 gradphis = gradTemplate * phis
-                
+
                 # Gradients along the coordinate direction
                 gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
-            
+
                 phis = np.prod(phis, axis=1)
                 indices = np.array((indL[iQ] + NY*iPlane,
                                     (indL[iQ]+1) % NY + NY*iPlane,
@@ -777,7 +777,7 @@ class FciFemSim:
                 disp = quad - cellCentre
                 cellId = iPlane*NY + yCell
                 self.store.append((indices, phis, gradphis, quadWeight, quad, cellId, disp))
-                
+
                 # idx = (indices%NY).astype('bool')
                 # ni = 2*sum(idx)
                 # gd[index:index+2*ni] = np.repeat(gradphis[idx].T,2) * np.tile(disp, ni)
@@ -785,21 +785,21 @@ class FciFemSim:
                 # ri[index+ni:index+2*ni] = np.repeat(indices[idx], 2) + nDoFs
                 # ci[index:index+2*ni] = np.tile((cellId, cellId + nDoFs), ni)
                 # index += 2*ni
-                
+
                 gd[index:index+16] = np.repeat(gradphis.T,2) * np.tile(disp, 8)
                 ri[index:index+8] = np.repeat(indices, 2)
                 ri[index+8:index+16] = np.repeat(indices, 2) + nDoFs
                 ci[index:index+16] = np.tile((cellId, cellId + nDoFs), 8)
                 index += 16
-                
+
                 self.gradphiSums[indices] -= gradphis * quadWeight
-        
+
         del quads, quadWeights, mapL, mapR, indL, indR, phiLY, phiRY, phiX
-        
+
         # gd[index:index+nCells] = 1.0
         # ri[index:index+nCells] = 2*nDoFs
         # ci[index:index+nCells] = np.arange(nCells)
-        
+
         ##### Using SuiteSparse #####
         # idx = (np.arange(nCells)%NY).astype('bool')
         # self.G = sp.csc_matrix((gd[:index], (ci[:index], ri[:index])),
@@ -826,9 +826,9 @@ class FciFemSim:
                                           overwrite_A=True, overwrite_b=True)
         x[r:] = 0.
         self.xi = (ssqr.qmult(QR, x), r)
-        
+
         # self.xi = (np.zeros(nCells), 0)
-        
+
         # ri -= np.ceil(ri/NY).astype('int')
         # self.G = sp.csr_matrix((gd, (ri, ci)), shape=(nCells-2*NX, nCells))
         # rhs = self.gradphiSums.T.ravel()[(np.arange(nCells)%NY).astype('bool')]
@@ -839,7 +839,7 @@ class FciFemSim:
         # tol = 1e-10
         # # self.xi = sp_la.lsqr(self.G, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
         # # self.xi = (self.xi[0], self.xi[1], self.xi[2], self.xi[3], self.xi[4])
-        # D = sp.diags(1/sp_la.norm(self.G, axis=0), format='csc')
+        # D = sp.diags(1/np.sqrt(self.G.power(2).sum(axis=0)).A1, format='csc')
         # # self.xi = sp_la.lsmr(self.G @ D, rhs, x0=v0, atol=tol, btol=tol, maxiter=maxit)
         # self.xi = sp_la.lsqr(self.G @ D, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
         # self.xi = (D @ self.xi[0], self.xi[1], self.xi[2], self.xi[3], self.xi[4])
@@ -848,7 +848,7 @@ class FciFemSim:
         # # ilu = sp_la.spilu(self.G)
         # # P = sp_la.LinearOperator(self.G.shape, lambda x: ilu.solve(x))
         # # self.xi = sp_la.lgmres(self.G, rhs, M=P, x0=v0, tol=tol, atol=tol)
-        
+
         # gd[index:index+nCells] = 1.0
         # ri[index:index+nCells] = 2*nDoFs
         # ci[index:index+nCells] = np.arange(nCells)
@@ -868,7 +868,7 @@ class FciFemSim:
         # # ilu = sp_la.spilu(self.G, fill_factor=1.)
         # # P = sp_la.LinearOperator(self.G.shape, lambda x: ilu.solve(x))
         # # self.xi = sp_la.lgmres(self.G, rhs, x0=v0, maxiter=maxit, tol=tol, atol=tol)
-        
+
         # pre-allocate arrays for stiffness matrix triplets
         nEntries = (2*ndim)**2
         nMaxEntries = nEntries * nQuads * NX
@@ -883,22 +883,22 @@ class FciFemSim:
         index = 0
         for iQ, (indices, phis, gradphis, quadWeight, quad, cellId, disp) in enumerate(self.store):
             quadWeight += np.sum(self.xi[0][[cellId, cellId + nDoFs]] * disp)
-            Kdata[index:index+nEntries] = ( quadWeight * 
+            Kdata[index:index+nEntries] = ( quadWeight *
                 np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
             Adata[index:index+nEntries] = ( quadWeight *
                 np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
             if not massLumping:
-                Mdata[index:index+nEntries] = ( quadWeight * 
+                Mdata[index:index+nEntries] = ( quadWeight *
                     np.outer(phis, phis).ravel() )
             row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
             col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
             index += nEntries
-            
+
             self.gradphiSumsNew[indices] += gradphis * quadWeight
             self.u_weights[indices] += quadWeight * phis
             if f is not None:
                 self.b[indices] += f(quad) * phis * quadWeight
-        
+
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
@@ -908,15 +908,15 @@ class FciFemSim:
         else:
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
-    
+
     def computeSpatialDiscretizationConservativeCellVCI(self, f=None, NQX=1, NQY=None, Qord=2,
                                       quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
-        
+
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
         M is the mass matrix from the time derivative
-        
+
         Parameters
         ----------
         f : {callable, None}, optional
@@ -968,17 +968,17 @@ class FciFemSim:
         col_ind = np.zeros(nMaxEntries, dtype='int')
         self.b = np.zeros(nDoFs)
         self.u_weights = np.zeros(nDoFs)
-        
+
         self.store = []
         self.gradphiSums = np.zeros((nDoFs, ndim))
         self.gradphiSumsNew = np.zeros((nDoFs, ndim))
-        
+
         self.nCells = NQX*NQY*NX
         nCells = self.nCells
         gd = np.empty(8*nQuads*NX + nCells)
         ri = np.empty(8*nQuads*NX + nCells, dtype='int')
         ci = np.empty(8*nQuads*NX + nCells, dtype='int')
-        
+
         ##### compute spatial discretizaton
         index = 0
         for iPlane in range(NX):
@@ -991,15 +991,15 @@ class FciFemSim:
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
                 weights = np.repeat(2/Qord, Qord)
-            
+
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
                       reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
             quadWeights = np.repeat(1., len(quads))
-            
+
             for i in range(ndim):
-                quads = np.concatenate( 
+                quads = np.concatenate(
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
@@ -1011,26 +1011,26 @@ class FciFemSim:
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
             phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
-            
+
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
-            
+
             for iQ, quad in enumerate(quads):
                 phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
                                   (  phiLY[iQ]  , (1-phiX[iQ])),
                                   ((1-phiRY[iQ]),   phiX[iQ]  ),
                                   (  phiRY[iQ]  ,   phiX[iQ]  )))
-                
+
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
                                       -self.idy[iPlane + 1][indR[iQ]],
                                       self.idy[iPlane + 1][indR[iQ]])
                 gradphis = gradTemplate * phis
-                
+
                 # Gradients along the coordinate direction
                 gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
-            
+
                 phis = np.prod(phis, axis=1)
                 indices = np.array([indL[iQ] + NY*iPlane,
                                     (indL[iQ]+1) % NY + NY*iPlane,
@@ -1039,19 +1039,19 @@ class FciFemSim:
                 quadWeight = quadWeights[iQ]
                 cellId = iPlane*NQX*NQY + NQX*int(quad[1]*NQY) + int((quad[0]-nodeX)*iqdx)
                 self.store.append((indices, phis, gradphis, quadWeight, quad, cellId))
-                
+
                 gd[index:index+8] = gradphis.T.ravel()
                 ri[index:index+4] = indices
                 ri[index+4:index+8] = indices + self.nDoFs
                 ci[index:index+8] = cellId
                 index += 8
-                
+
                 self.gradphiSums[indices] -= gradphis * quadWeight
-        
+
         gd[index:index+nCells] = 1.0
         ri[index:index+nCells] = 2*nDoFs
         ci[index:index+nCells] = np.arange(nCells)
-        
+
         self.G = sp.csr_matrix((gd, (ri, ci)), shape=(2*nDoFs+1, nCells))
         rhs = np.concatenate((self.gradphiSums.T.ravel(), np.zeros(1)))
         v0 = np.zeros(nCells)
@@ -1063,26 +1063,26 @@ class FciFemSim:
         # self.xi = sp_la.lsmr(self.G @ D, rhs, x0=v0, atol=tol, btol=tol, maxiter=maxit)
         self.xi = sp_la.lsqr(self.G @ D, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
         self.xi = (D @ self.xi[0], self.xi[1], self.xi[2], self.xi[3])
-        
+
         index = 0
         for iQ, (indices, phis, gradphis, quadWeight, quad, cellId) in enumerate(self.store):
             quadWeight += self.xi[0][cellId] # Every quad cell
-            Kdata[index:index+nEntries] = ( quadWeight * 
+            Kdata[index:index+nEntries] = ( quadWeight *
                 np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
             Adata[index:index+nEntries] = ( quadWeight *
                 np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
             if not massLumping:
-                Mdata[index:index+nEntries] = ( quadWeight * 
+                Mdata[index:index+nEntries] = ( quadWeight *
                     np.outer(phis, phis).ravel() )
             row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
             col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
             index += nEntries
-            
+
             self.gradphiSumsNew[indices] += gradphis * quadWeight
             self.u_weights[indices] += quadWeight * phis
             if f is not None:
                 self.b[indices] += f(quad) * phis * quadWeight
-        
+
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
@@ -1092,15 +1092,15 @@ class FciFemSim:
         else:
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
-            
+
     def computeSpatialDiscretizationConservativePointVCI(self, f=None, NQX=1, NQY=None, Qord=2,
                                       quadType='gauss', massLumping=False):
         """Assemble the system discretization matrices K, A, M in CSR format.
-        
+
         K is the stiffness matrix from the diffusion term
         A is the advection matrix
         M is the mass matrix from the time derivative
-        
+
         Parameters
         ----------
         f : {callable, None}, optional
@@ -1152,15 +1152,15 @@ class FciFemSim:
         col_ind = np.zeros(nMaxEntries, dtype='int')
         self.b = np.zeros(nDoFs)
         self.u_weights = np.zeros(nDoFs)
-        
+
         self.store = []
         self.gradphiSums = np.zeros((nDoFs, ndim))
         self.gradphiSumsNew = np.zeros((nDoFs, ndim))
-        
+
         gd = np.empty(9 * nQuads * NX)
         ri = np.empty(9 * nQuads * NX, dtype='int')
         ci = np.empty(9 * nQuads * NX, dtype='int')
-        
+
         ##### compute spatial discretizaton
         index = 0
         for iPlane in range(NX):
@@ -1172,15 +1172,15 @@ class FciFemSim:
             elif quadType.lower() in ('uniform', 'u'):
                 offsets = np.linspace(-1+1/Qord, 1-1/Qord, Qord)
                 weights = np.repeat(2/Qord, Qord)
-            
+
             offsets = (offsets * dx * 0.5 / NQX, offsets * 0.5 / NQY)
             weights = (weights * dx * 0.5 / NQX, weights * 0.5 / NQY)
             quads = ( np.indices([NQX, NQY], dtype='float').T.
                       reshape(-1, ndim) + 0.5 ) * [dx/NQX, 1/NQY]
             quadWeights = np.repeat(1., len(quads))
-            
+
             for i in range(ndim):
-                quads = np.concatenate( 
+                quads = np.concatenate(
                     [quads + offset*np.eye(ndim)[i] for offset in offsets[i]] )
                 quadWeights = np.concatenate(
                     [quadWeights * weight for weight in weights[i]] )
@@ -1192,26 +1192,26 @@ class FciFemSim:
             indR = (np.searchsorted(self.nodeY[iPlane + 1], mapR, side='right') - 1) % NY
             phiLY = (mapL - self.nodeY[iPlane][indL]) * self.idy[iPlane][indL]
             phiRY = (mapR - self.nodeY[iPlane + 1][indR]) * self.idy[iPlane + 1][indR]
-            
+
             gradX = 1/dx
             gradTemplate = np.array(((-gradX, 0.),(-gradX, 0.),
                                       ( gradX, 0.),( gradX, 0.)))
-            
+
             for iQ, quad in enumerate(quads):
                 phis = np.array((((1-phiLY[iQ]) , (1-phiX[iQ])),
                                   (  phiLY[iQ]  , (1-phiX[iQ])),
                                   ((1-phiRY[iQ]),   phiX[iQ]  ),
                                   (  phiRY[iQ]  ,   phiX[iQ]  )))
-                
+
                 gradTemplate[:,1] = (-self.idy[iPlane][indL[iQ]],
                                       self.idy[iPlane][indL[iQ]],
                                       -self.idy[iPlane + 1][indR[iQ]],
                                       self.idy[iPlane + 1][indR[iQ]])
                 gradphis = gradTemplate * phis
-                
+
                 # Gradients along the coordinate direction
                 gradphis[:,0] -= self.mapping.deriv(quad)*gradphis[:,1]
-            
+
                 phis = np.prod(phis, axis=1)
                 indices = np.array([indL[iQ] + NY*iPlane,
                                     (indL[iQ]+1) % NY + NY*iPlane,
@@ -1219,19 +1219,19 @@ class FciFemSim:
                                     ((indR[iQ]+1) % NY + NY*(iPlane+1)) % nDoFs])
                 quadWeight = quadWeights[iQ]
                 self.store.append((indices, phis, gradphis, quadWeight, quad))
-                
+
                 gd[index:index+8] = gradphis.T.ravel()
                 ri[index:index+4] = indices
                 ri[index+4:index+8] = indices + self.nDoFs
                 ci[index:index+8] = iQ + iPlane*nQuads
                 index += 8
-                
+
                 self.gradphiSums[indices] -= gradphis * quadWeight
-        
+
         gd[index:index+(nQuads * NX)] = 1.0
         ri[index:index+(nQuads * NX)] = 2*nDoFs
         ci[index:index+(nQuads * NX)] = np.arange(nQuads * NX)
-    
+
         ##### Using SuiteSparse QR decomposition #####
         # Form the transpose of G (i.e. ri and ci intentionally swapped)
         # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
@@ -1254,7 +1254,7 @@ class FciFemSim:
                                           overwrite_A=True, overwrite_b=True)
         x[r:] = 0.
         self.xi = (ssqr.qmult(QR, x), r)
-    
+
         # ##### Using scipy.sparse.linalg, much slower, uses less memory #####
         # self.G = sp.csr_matrix((gd, (ri, ci)), shape=(2*nDoFs+1, nQuads * NX))
         # rhs = np.concatenate((self.gradphiSums.T.ravel(), np.zeros(1)))
@@ -1264,26 +1264,26 @@ class FciFemSim:
         # tol = 1e-10
         # # self.xi = sp_la.lsmr(self.G, rhs, x0=v0, atol=tol, btol=tol, maxiter=maxit)
         # self.xi = sp_la.lsqr(self.G, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
-                
+
         index = 0
         for iQ, (indices, phis, gradphis, quadWeight, quad) in enumerate(self.store):
             quadWeight += self.xi[0][iQ]
-            Kdata[index:index+nEntries] = ( quadWeight * 
+            Kdata[index:index+nEntries] = ( quadWeight *
                 np.ravel( gradphis @ (self.diffusivity @ gradphis.T) ) )
             Adata[index:index+nEntries] = ( quadWeight *
                 np.outer(np.dot(gradphis, self.velocity), phis).ravel() )
             if not massLumping:
-                Mdata[index:index+nEntries] = ( quadWeight * 
+                Mdata[index:index+nEntries] = ( quadWeight *
                     np.outer(phis, phis).ravel() )
             row_ind[index:index+nEntries] = np.repeat(indices, 2*ndim)
             col_ind[index:index+nEntries] = np.tile(indices, 2*ndim)
             index += nEntries
-            
+
             self.gradphiSumsNew[indices] += gradphis * quadWeight
             self.u_weights[indices] += quadWeight * phis
             if f is not None:
                 self.b[indices] += f(quad) * phis * quadWeight
-        
+
         self.K = sp.csr_matrix( (Kdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
         self.A = sp.csr_matrix( (Adata, (row_ind, col_ind)),
@@ -1293,7 +1293,7 @@ class FciFemSim:
         else:
             self.M = sp.csr_matrix( (Mdata, (row_ind, col_ind)),
                                 shape=(nDoFs, nDoFs) )
-    
+
     def initializeTimeIntegrator(self, integrator, dt, P='ilu', **kwargs):
         """Initialize and register the time integration scheme to be used.
 
@@ -1340,7 +1340,7 @@ class FciFemSim:
                 "'LowStorageRK' ('RK' or 'LSRK') or 'BackwardEuler' ('BE'), a "
                 "type derived from integrators.Integrator, or an object of "
                 "such a type.")
-    
+
     def step(self, nSteps = 1, **kwargs):
         """Advance the simulation a given number of timesteps.
 
@@ -1410,14 +1410,14 @@ class FciFemSim:
                     (indL[iP]+1) % NY + NY*iPlane,
                     (indR[iP] + NY*(iPlane+1)) % nDoFs,
                     ((indR[iP]+1) % NY + NY*(iPlane+1)) % nDoFs )
-        
+
         self.phiPlot[iPlane*nPointsPerPlane + iP + 1:] = self.phiPlot[0:NY*ny + 1]
         self.indPlot[iPlane*nPointsPerPlane + iP + 1:] = self.indPlot[0:NY*ny + 1]
-        
+
         self.X = np.append(self.X, (self.xmax*np.ones(NY*ny + 1)))
         self.Y = np.concatenate((np.tile(points[:,1], NX), points[0:NY*ny + 1,1]))
         self.U = np.sum(self.phiPlot * self.u[self.indPlot], axis=1)
-    
+
     def computePlottingSolution(self):
         """Compute interpolated solution at the plotting points.
 

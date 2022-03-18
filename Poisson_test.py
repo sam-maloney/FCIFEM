@@ -10,28 +10,28 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.sparse.linalg as sp_la
 
-# import fcifem
-import fcifem_periodic as fcifem
+import fcifem
+# import fcifem_periodic as fcifem
 
 from timeit import default_timer
 
 class slantedTestProblem:
     xmax = 2*np.pi
     ymax = 1.
-    
+
     n = 10
     p2 = np.pi**2
     C = 0.5/(8*p2*n-(4*p2+(4*p2+1)*n**2)**2/(8*p2*n))
     # C = 4*n*p2 / ((8*p2*n)**2 - (4*p2+4*p2*n**2+100)**2)
     B = C*(4*np.pi**2+(4*np.pi**2+1)*n**2)/(8*np.pi**2*n)
     A = 1/(2*(-4*p2-1)*n**2)
-    
+
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
         _2py = 2*np.pi*y
         return -np.sin(self.n*(_2py - x))*(1 + np.sin(_2py))*0.5
-    
+
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
@@ -39,7 +39,35 @@ class slantedTestProblem:
         n2pyx = self.n*(_2py - x)
         return self.A*np.sin(n2pyx) + self.B*np.sin(_2py)*np.sin(n2pyx) \
                                     + self.C*np.cos(_2py)*np.cos(n2pyx)
-        
+
+
+class simplifiedSlantProblem:
+    xmax = 2*np.pi
+    ymax = 1.
+
+    n = 10
+    p2 = np.pi**2
+    C = 0.5/(8*p2*n-(4*p2+(4*p2+1)*n**2)**2/(8*p2*n))
+    # C = 4*n*p2 / ((8*p2*n)**2 - (4*p2+4*p2*n**2+100)**2)
+    B = C*(4*np.pi**2+(4*np.pi**2+1)*n**2)/(8*np.pi**2*n)
+    A = 1/(2*(-4*p2-1)*n**2)
+
+    def __call__(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        _2py = 2*np.pi*y
+        return -np.sin(self.n*(_2py - x))*0.5
+
+# TODO: compute analytic solution
+    def solution(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        _2py = 2*np.pi*y
+        n2pyx = self.n*(_2py - x)
+        return self.A*np.sin(n2pyx) + self.B*np.sin(_2py)*np.sin(n2pyx) \
+                                    + self.C*np.cos(_2py)*np.cos(n2pyx)
+
+
 class sinXsinY:
     xmax = 1.
     ymax = 1.
@@ -48,12 +76,12 @@ class sinXsinY:
     umax = (1 / (xfac**2 + yfac**2))
     dudxMax = umax*xfac
     dudyMax = umax*yfac
-    
+
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return np.sin(self.xfac*x)*np.sin(self.yfac*y)  
-    
+        return np.sin(self.xfac*x)*np.sin(self.yfac*y)
+
     def solution(self, p):
         return self.umax * self(p)
 
@@ -77,7 +105,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 2
-stop = 6
+stop = 7
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -90,91 +118,92 @@ dxi = []
 # grid cells along one dimension, each cell forms 2 triangles
 # therefore number of nodes equals (N+1)*(N+1)
 for iN, NX in enumerate(NX_array):
-    
+
     start_time = default_timer()
-    
+
     NY = NX
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCIold
     ##### These require the fcifem_periodic version of the module #####
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
-    
+
     sim.setInitialConditions(f)
-    
+
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
-    
+
     # Assemble the mass matrix and forcing term
     sim.computeSpatialDiscretization(f, NQX=1, NQY=NY, Qord=3, quadType='g',
                                      massLumping=False)
-    
+
     try:
         dxi.append(sim.xi[1:])
     except:
         pass
-    
+
     # sim.K.data[0] = 1.
     # sim.K.data[1:sim.K.indptr[1]] = 0.
     # sim.b[0] = f.solution(sim.DoFs[0])
 
     ##### Enforce exact solution constraints directly #####
-    
+
     # sim.K.data[0] = 1.
     # sim.K.data[1:sim.K.indptr[1]] = 0.
     # sim.b[0] = 0.
-    
+
     # n = int(NY/2)
     # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
     # sim.K[n,n] = 1.
     # sim.b[n] = 0.
-    
+
     # n = int(NX*NY/2)
     # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
     # sim.K[n,n] = 1.
     # sim.b[n] = 0.
-    
+
     # # n = int(NX*NY*3/4)
     # # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
     # # sim.K[n,n] = 1.
     # # sim.b[n] = 0.
-    
+
     # Centre point
     n = int(NX*NY/2 + NY/2)
     sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
     sim.K[n,n] = 1.
     sim.b[n] = f.solution(sim.DoFs[n])
-    
+
     for n, node in enumerate(sim.DoFs):
         if node.prod() == 0.:
             sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
             sim.K[n,n] = 1.
             sim.b[n] = f.solution(sim.DoFs[n])
-    
+
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]} s')
     start_time = default_timer()
-    
+
     # Solve for the approximate solution
     # u = sp_la.spsolve(sim.K, sim.b)
     tolerance = 1e-10
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=tolerance, atol=tolerance)
     # sim.u = u[0:sim.nDoFs]
-    
+
     t_solve[iN] = default_timer()-start_time
     print(f'solve time = {t_solve[iN]} s')
     start_time = default_timer()
-    
+
     # compute the analytic solution and normalized error norms
     uExact = f.solution(sim.DoFs)
-    
+
     E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf) / f.umax
     E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs) / f.umax
-    
+
     print(f'max error = {E_inf[iN]}')
     print(f'L2 error  = {E_2[iN]}\n')
 
@@ -233,7 +262,7 @@ plt.ylabel(r'$y$', rotation=0)
 if abs(f.xmax - 2*np.pi) < 1e-10:
     plt.xticks(np.linspace(0, f.xmax, 5),
         ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
-#  plt.xticks(np.linspace(0, 2*np.pi, 7), 
+#  plt.xticks(np.linspace(0, 2*np.pi, 7),
 #      ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
 else:
     plt.xticks(np.linspace(0, f.xmax, 6))
