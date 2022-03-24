@@ -128,6 +128,18 @@ class QRfactorization:
     def __del__(self):
         self.free()
 
+# class Array(np.ndarray):
+#     cholmod_dense_struct = None
+
+#     @property
+#     def C(self): return self.cholmod_dense_struct
+
+#     def __new__(cls, *args, )
+
+#     def __del__(self):
+#        cppyy.gbl.cholmod_l_free_dense(self.cholmod_dense_struct, cc)
+#        super().__del__()
+
 
 def free(A):
     try:
@@ -138,7 +150,6 @@ def free(A):
         cppyy.gbl.cholmod_l_free_dense(A, cc)
     except:
         pass
-    return
 
 def scipyCscToCholmodSparse(X, Z=None, forceInt64=False):
     if not isspmatrix(X):
@@ -155,6 +166,7 @@ def scipyCscToCholmodSparse(X, Z=None, forceInt64=False):
         if (X.indptr.dtype != 'int64') or (X.indices.dtype != 'int64'):
             warn('Input matrix should have all indices of type int64 to avoid '
                  'copying index arrays', SparseEfficiencyWarning)
+# TODO: maintain references to these arrays
         indptr = X.indptr.astype('int64', copy=False)
         indices = X.indices.astype('int64', copy=False)
         itype = CHOLMOD_LONG
@@ -166,6 +178,7 @@ def scipyCscToCholmodSparse(X, Z=None, forceInt64=False):
                 warn('If indices.dtype of input matrix is int64 then '
                      'indptr.dtype should also be int64 to avoid copying '
                      'indptr array', SparseEfficiencyWarning)
+# TODO: maintain references to this array
                 indptr = X.indptr.astype('int64')
                 itype = CHOLMOD_LONG
         else: # X.indptr.dtype == 'int64'
@@ -321,7 +334,7 @@ def cholmodDenseToNumpyArray(chol_x):
             x = np.frombuffer(chol_x.x, dtype=np.complex128, count=chol_x.nzmax)
         else: # chol_x.dtype == CHOLMOD_SINGLE
             x = np.frombuffer(chol_x.x, dtype=np.complex64, count=chol_x.nzmax)
-    if chol_x.xtype == CHOLMOD_ZOMPLEX:
+    elif chol_x.xtype == CHOLMOD_ZOMPLEX:
         if chol_x.dtype == CHOLMOD_DOUBLE:
             x = np.frombuffer(chol_x.x, dtype=np.float64, count=chol_x.nzmax)
             z = np.frombuffer(chol_x.z, dtype=np.float64, count=chol_x.nzmax)
@@ -407,7 +420,7 @@ def qmult(QR, x, method=SPQR_QX):
         chol_x, # *Xdense; size m-by-n
         cc # workspace and parameters
         )
-
+# TODO: does the cholmod struct need to be freed when numpy array deleted?
     if returnNumpy:
         if isinstance(chol_Qx, cppyy.gbl.cholmod_dense_struct):
             return cholmodDenseToNumpyArray(chol_Qx)
@@ -419,6 +432,8 @@ def qmult(QR, x, method=SPQR_QX):
 def min2norm(A, b, ordering=SPQR_ORDERING_DEFAULT, tol=SPQR_DEFAULT_TOL):
     returnNumpy = False
     if isinstance(A, cppyy.gbl.cholmod_sparse_struct):
+        if A.itype != CHOLMOD_LONG:
+            raise TypeError('itype must be CHOLMOD_LONG (i.e. long or int64)')
         chol_A = A
     else:
         chol_A = scipyCscToCholmodSparse(A, forceInt64=True)
@@ -449,7 +464,7 @@ def min2norm(A, b, ordering=SPQR_ORDERING_DEFAULT, tol=SPQR_DEFAULT_TOL):
         chol_b,
         cc # workspace and parameters
         )
-
+# TODO: does the cholmod struct need to be freed when numpy array deleted?
     if returnNumpy:
         if isinstance(chol_x, cppyy.gbl.cholmod_dense_struct):
             return cholmodDenseToNumpyArray(chol_x)

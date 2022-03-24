@@ -175,7 +175,7 @@ for i, error in enumerate(E_2_L):
               linewidth=dashed_linewidth)
 axL2.axhline(2, linestyle=':', color=black, label='Expected order', zorder=0,
              linewidth=dashed_linewidth)
-axL1.minorticks_off()
+# axL1.minorticks_off()
 axL1.set_xlabel(r'$\log_2(N_xN_y)$')
 axL1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axL2.set_ylabel(r'Intra-step Order of Convergence')
@@ -197,7 +197,7 @@ for i, error in enumerate(E_2_R):
               linewidth=dashed_linewidth)
 axR2.axhline(2, linestyle=':', color=black, label='Expected order', zorder=0,
              linewidth=dashed_linewidth)
-axR1.minorticks_off()
+# axR1.minorticks_off()
 axR1.set_xlabel(r'$\log_2(N_xN_y)$')
 axR1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axR2.set_ylabel(r'Intra-step Order of Convergence')
@@ -214,4 +214,4 @@ axR1.set_ylim(min(ylimL[0],ylimR[0]), max(ylimL[1],ylimR[1]))
 # axL1.set_ylim(1e-6, 1e-2)
 # axR1.set_ylim(1e-6, 1e-2)
 
-fig.savefig("Poisson_VCI_conv.pdf", bbox_inches = 'tight', pad_inches = 0)
+# fig.savefig("Poisson_VCI_conv.pdf", bbox_inches = 'tight', pad_inches = 0)

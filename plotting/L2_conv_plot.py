@@ -168,7 +168,7 @@ for i, error in enumerate(E_2_L):
     inds.append(N[i] >= 2)
     axL1.semilogy(N[i][inds[i]], error[inds[i]], label=labels_L[i],
                   linewidth=solid_linewidth)
-    
+
     logE = np.log(error[inds[i]])
     logN = np.log(NX_L[i][inds[i]])
     order = (logE[:-1] - logE[1:])/(logN[1:] - logN[:-1])
@@ -177,7 +177,7 @@ for i, error in enumerate(E_2_L):
               linewidth=dashed_linewidth)
 axL2.axhline(2, linestyle=':', color=black, label='Expected order', zorder=0,
              linewidth=dashed_linewidth)
-axL1.minorticks_off()
+# axL1.minorticks_off()
 axL1.set_xlabel(r'$\log_2(N_xN_y)$')
 axL1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axL2.set_ylabel(r'Intra-step Order of Convergence')
@@ -185,12 +185,12 @@ axL1.legend()
 Nmin = min([min(N[i]) for i in range(len(N))])
 Nmax = max([max(N[i]) for i in range(len(N))])
 Nstep = 2
-axL1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)/Nstep + 1))
+axL1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
 ordb = 0
 ordt = 4
 ordstep = 1
 axL2.set_ylim(ordb, ordt)
-axL2.set_yticks(np.linspace(ordb, ordt, (ordt - ordb)/ordstep + 1))
+axL2.set_yticks(np.linspace(ordb, ordt, int((ordt - ordb)/ordstep) + 1))
 
 N = []
 inds = []
@@ -203,7 +203,7 @@ for i, error in enumerate(E_2_R):
         fillstyle = 'none'
     axR1.semilogy(N[i][inds[i]], error[inds[i]], label=labels_R[i],
                   linewidth=solid_linewidth, fillstyle=fillstyle)
-    
+
     logE = np.log(error[inds[i]])
     logN = np.log(NX_R[i][inds[i]])
     order = (logE[:-1] - logE[1:])/(logN[1:] - logN[:-1])
@@ -212,7 +212,7 @@ for i, error in enumerate(E_2_R):
               linewidth=dashed_linewidth, fillstyle=fillstyle)
 axR2.axhline(2, linestyle=':', color=black, label='Expected order', zorder=0,
              linewidth=dashed_linewidth)
-axR1.minorticks_off()
+# axR1.minorticks_off()
 axR1.set_xlabel(r'$\log_2(N_xN_y)$')
 axR1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axR2.set_ylabel(r'Intra-step Order of Convergence')
@@ -220,9 +220,9 @@ axR1.legend(loc='upper right')
 Nmin = min([min(N[i]) for i in range(len(N))])
 Nmax = max([max(N[i]) for i in range(len(N))])
 Nstep = 2
-axR1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)/Nstep + 1))
+axR1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
 axR2.set_ylim(ordb, ordt)
-axR2.set_yticks(np.linspace(ordb, ordt, (ordt - ordb)/ordstep + 1))
+axR2.set_yticks(np.linspace(ordb, ordt, int((ordt - ordb)/ordstep) + 1))
 axR1.set_ylim(top=2)
 
-# fig.savefig('L2_conv.pdf', bbox_inches='tight', pad_inches=0)
+fig.savefig('L2_conv.pdf', bbox_inches='tight', pad_inches=0)

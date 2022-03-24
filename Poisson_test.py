@@ -16,56 +16,69 @@ import fcifem
 from timeit import default_timer
 
 class slantedTestProblem:
-    xmax = 2*np.pi
+    xmax = 1.
     ymax = 1.
+    xfac = 2*np.pi/xmax
+    yfac = 2*np.pi/ymax
 
-    n = 10
-    p2 = np.pi**2
-    C = 0.5/(8*p2*n-(4*p2+(4*p2+1)*n**2)**2/(8*p2*n))
-    # C = 4*n*p2 / ((8*p2*n)**2 - (4*p2+4*p2*n**2+100)**2)
-    B = C*(4*np.pi**2+(4*np.pi**2+1)*n**2)/(8*np.pi**2*n)
-    A = 1/(2*(-4*p2-1)*n**2)
+    n = 8
+
+    n2 = n*n
+    yf2 = yfac*yfac
+    _2nyf2 = 2*n*yf2
+    n2xf2pyf2 = n2*(xfac*xfac + yf2)
+    n2xf2pyf2pyf2 = n2xf2pyf2 + yf2
+    A = 0.5 / n2xf2pyf2
+    B = 0.5 / (n2xf2pyf2pyf2 - _2nyf2*_2nyf2/n2xf2pyf2pyf2)
+    C = B*_2nyf2 / n2xf2pyf2pyf2
+
+    aA = abs(A)
+    aB = abs(B)
+    aC = abs(C)
+    umax = aA + aB + aC
+    dudxMax = umax*xfac*n
+    dudyMax = yfac*(aA*n + (aB+aC)*(1+n))
+    dudQMax = yfac*(aB+aC)/np.sqrt(2)
+
+    dfdxMax = xfac*n
+    dfdyMax = yfac*(n + 0.5)
+    dfdQMax = 0.5*yfac/np.sqrt(2)
 
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        _2py = 2*np.pi*y
-        return -np.sin(self.n*(_2py - x))*(1 + np.sin(_2py))*0.5
+        yarg = self.yfac*y
+        return 0.5*np.sin(self.n*(yarg - self.xfac*x))*(1 + np.sin(yarg))
 
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        _2py = 2*np.pi*y
-        n2pyx = self.n*(_2py - x)
-        return self.A*np.sin(n2pyx) + self.B*np.sin(_2py)*np.sin(n2pyx) \
-                                    + self.C*np.cos(_2py)*np.cos(n2pyx)
+        yarg = self.yfac*y
+        xyarg = self.n*(yarg - self.xfac*x)
+        return self.A*np.sin(xyarg) + self.B*np.sin(yarg)*np.sin(xyarg) \
+                                    + self.C*np.cos(yarg)*np.cos(xyarg)
 
 
 class simplifiedSlantProblem:
-    xmax = 2*np.pi
+    xmax = 1.
     ymax = 1.
+    n = 2
 
-    n = 10
-    p2 = np.pi**2
-    C = 0.5/(8*p2*n-(4*p2+(4*p2+1)*n**2)**2/(8*p2*n))
-    # C = 4*n*p2 / ((8*p2*n)**2 - (4*p2+4*p2*n**2+100)**2)
-    B = C*(4*np.pi**2+(4*np.pi**2+1)*n**2)/(8*np.pi**2*n)
-    A = 1/(2*(-4*p2-1)*n**2)
+    xfac = 2*np.pi/xmax
+    yfac = 2*np.pi/ymax
+    umax = 1/(2*n*n*(yfac*yfac + xfac*xfac))
+    dudxMax = umax*xfac*n
+    dudyMax = umax*yfac*n
 
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        _2py = 2*np.pi*y
-        return -np.sin(self.n*(_2py - x))*0.5
+        return 0.5*np.sin(self.n*(self.yfac*y - self.xfac*x))
 
-# TODO: compute analytic solution
     def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        _2py = 2*np.pi*y
-        n2pyx = self.n*(_2py - x)
-        return self.A*np.sin(n2pyx) + self.B*np.sin(_2py)*np.sin(n2pyx) \
-                                    + self.C*np.cos(_2py)*np.cos(n2pyx)
+        return self.umax * np.sin(self.n*(self.yfac*y - self.xfac*x))
 
 
 class sinXsinY:
@@ -85,11 +98,12 @@ class sinXsinY:
     def solution(self, p):
         return self.umax * self(p)
 
-# f = slantedTestProblem()
-f = sinXsinY()
+f = slantedTestProblem()
+# f = simplifiedSlantProblem()
+# f = sinXsinY()
 
-mapping = fcifem.mappings.SinusoidalMapping(0.2, -0.25*f.xmax, f.xmax)
-# mapping = fcifem.mappings.LinearMapping(1/f.xmax)
+# mapping = fcifem.mappings.SinusoidalMapping(0.2, -0.25*f.xmax, f.xmax)
+mapping = fcifem.mappings.LinearMapping(1/f.xmax)
 # mapping = fcifem.mappings.StraightMapping()
 
 perturbation = 0.1
@@ -104,8 +118,8 @@ kwargs={
     'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
-start = 2
-stop = 7
+start = 1
+stop = 6
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -114,6 +128,9 @@ t_setup = np.empty(nSamples)
 t_solve = np.empty(nSamples)
 dxi = []
 
+old_printoptions = np.get_printoptions()
+np.set_printoptions(formatter={'float': lambda x: format(x, '.8e')})
+
 # loop over N to test convergence where N is the number of
 # grid cells along one dimension, each cell forms 2 triangles
 # therefore number of nodes equals (N+1)*(N+1)
@@ -121,7 +138,12 @@ for iN, NX in enumerate(NX_array):
 
     start_time = default_timer()
 
-    NY = NX
+    NY = 8*NX
+    # NX = 16
+
+    # NQX = 1
+    NQX = int(max(NY/NX, 1))
+    NQY = NY
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
@@ -139,7 +161,7 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
 
     # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, NQX=1, NQY=NY, Qord=3, quadType='g',
+    sim.computeSpatialDiscretization(f, NQX=NQX, NQY=NQY, Qord=3, quadType='g',
                                      massLumping=False)
 
     try:
@@ -192,7 +214,6 @@ for iN, NX in enumerate(NX_array):
     # u = sp_la.spsolve(sim.K, sim.b)
     tolerance = 1e-10
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=tolerance, atol=tolerance)
-    # sim.u = u[0:sim.nDoFs]
 
     t_solve[iN] = default_timer()-start_time
     print(f'solve time = {t_solve[iN]} s')
@@ -204,8 +225,21 @@ for iN, NX in enumerate(NX_array):
     E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf) / f.umax
     E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs) / f.umax
 
-    print(f'max error = {E_inf[iN]}')
-    print(f'L2 error  = {E_2[iN]}\n')
+    print(f'max error  = {E_inf[iN]}')
+    print(f'L2 error   = {E_2[iN]}\n')
+
+# with np.printoptions(formatter={'float': lambda x: format(x, '.8e')}):
+#     E_2
+#     E_inf
+#     t_setup
+#     t_solve
+
+E_2
+E_inf
+t_setup
+t_solve
+
+np.set_printoptions(**old_printoptions)
 
 #%% Plotting
 
@@ -223,8 +257,8 @@ plt.rc('text', usetex=True)
 fig = plt.figure(figsize=(7.75, 3))
 fig.subplots_adjust(hspace=0.3, wspace=0.3)
 
-sim.generatePlottingPoints(nx=1, ny=1)
-# sim.generatePlottingPoints(nx=int(NY/NX), ny=1)
+# sim.generatePlottingPoints(nx=1, ny=1)
+sim.generatePlottingPoints(nx=int(max(NY/NX,1)), ny=int(max(NX/NY,1)))
 sim.computePlottingSolution()
 
 # vmin = np.min(sim.U)
@@ -244,6 +278,7 @@ ax1 = plt.subplot(121)
 #                     ,shading='gouraud', cmap='seismic', vmin=vmin, vmax=vmax)
 field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
 # field = ax1.tripcolor(sim.X, sim.Y, exactSol, shading='gouraud')
+# field = ax1.tripcolor(sim.X, sim.Y, f(np.vstack((sim.X,sim.Y)).T), shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
 for yi in [0.4, 0.5, 0.6]:
     try:

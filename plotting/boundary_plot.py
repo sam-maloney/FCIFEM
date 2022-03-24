@@ -183,12 +183,12 @@ N = []
 inds = []
 for i, error in enumerate(E_2):
     N.append(np.log2(NY[i]*NX[i]**2).astype('int'))
-    inds.append(N[i] >= 2)
+    inds.append(N[i] >= 4)
     axL1.semilogy(N[i][inds[i]], error[inds[i]]/(2*np.pi), label=labels[i],
                   linewidth=solid_linewidth)
-axL1.minorticks_off()
-Nmin = min([min(N[i]) for i in range(len(N))])
-Nmax = max([max(N[i]) for i in range(len(N))])
+# axL1.minorticks_off()
+Nmin = min([min(N[i][inds[i]]) for i in range(len(N))])
+Nmax = max([max(N[i][inds[i]]) for i in range(len(N))])
 Nstep = 2
 axL1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
 axL1.set_xlabel(r'$\log_2(N_xN_y)$')
@@ -205,7 +205,7 @@ for i, error in enumerate(E_2):
     intraN = 0.5 * (N[i][inds[i]][:-1] + N[i][inds[i]][1:])
     axR1.plot(intraN, order, linestyle=':', label=labels[i],
               linewidth=dashed_linewidth)
-axL1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
+axR1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
 axR1.set_xlim(xlim)
 axR1.set_xlabel(r'$\log_2(N_xN_y)$')
 axR1.set_ylabel(r'Intra-step Order of Convergence')

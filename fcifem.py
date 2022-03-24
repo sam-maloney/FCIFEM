@@ -892,28 +892,28 @@ class FciFemSim:
 
             # start_time = default_timer()
 
-            ##### Using SuiteSparseQR_min2norm #####
-            G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
-                              shape=(np.iinfo('int32').max + 1, nQuads))
-            G._shape = (2*nNodes + 1, nQuads)
+            # ##### Using SuiteSparseQR_min2norm #####
             # G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
-            #                   shape=(2*nNodes + 1, nQuads))
-            rhs = np.append(dx, sliceBoundaryIntegrals.T.ravel())
-            xi = ssqr.min2norm(G, rhs).ravel()
-
-            # ##### Using scipy.sparse.linalg #####
-            # ##### slower, but uses less RAM and (slightly) more stable #####
-            # G = sp.csr_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
-            #                         shape=(2*nNodes + 1, nQuads))
+            #                   shape=(np.iinfo('int32').max + 1, nQuads))
+            # G._shape = (2*nNodes + 1, nQuads)
+            # # G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
+            # #                   shape=(2*nNodes + 1, nQuads))
             # rhs = np.append(dx, sliceBoundaryIntegrals.T.ravel())
-            # # rhs = np.append(0., gradphiSums.T.ravel())
-            # maxit = nQuads
-            # tol = 1e-10
-            # # D = sp.diags(1/np.sqrt(G.power(2).sum(axis=0)).A1, format='csc')
-            # # xi = D @ sp_la.lsmr(G @ D, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
-            # # # xi = D @ sp_la.lsqr(G @ D, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
-            # # xi = sp_la.lsmr(G, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
-            # xi = sp_la.lsqr(G, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
+            # xi = ssqr.min2norm(G, rhs).ravel()
+
+            ##### Using scipy.sparse.linalg #####
+            ##### slower, but uses less RAM and (slightly) more stable #####
+            G = sp.csr_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
+                                    shape=(2*nNodes + 1, nQuads))
+            rhs = np.append(dx, sliceBoundaryIntegrals.T.ravel())
+            # rhs = np.append(0., gradphiSums.T.ravel())
+            maxit = nQuads
+            tol = 1e-10
+            # D = sp.diags(1/np.sqrt(G.power(2).sum(axis=0)).A1, format='csc')
+            # xi = D @ sp_la.lsmr(G @ D, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
+            # # xi = D @ sp_la.lsqr(G @ D, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
+            # xi = sp_la.lsmr(G, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
+            xi = sp_la.lsqr(G, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
 
             # # attempting precondtioning with R factor; was not helpful
             # G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
