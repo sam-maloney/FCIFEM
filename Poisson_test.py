@@ -69,6 +69,7 @@ class simplifiedSlantProblem:
     umax = 1/(2*n*n*(yfac*yfac + xfac*xfac))
     dudxMax = umax*xfac*n
     dudyMax = umax*yfac*n
+    dudQMax = 0
 
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
@@ -119,7 +120,7 @@ kwargs={
 
 # allocate arrays for convergence testing
 start = 1
-stop = 6
+stop = 2
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -128,8 +129,7 @@ t_setup = np.empty(nSamples)
 t_solve = np.empty(nSamples)
 dxi = []
 
-old_printoptions = np.get_printoptions()
-np.set_printoptions(formatter={'float': lambda x: format(x, '.8e')})
+print('Poisson_test.py\n')
 
 # loop over N to test convergence where N is the number of
 # grid cells along one dimension, each cell forms 2 triangles
@@ -142,8 +142,9 @@ for iN, NX in enumerate(NX_array):
     # NX = 16
 
     # NQX = 1
-    NQX = int(max(NY/NX, 1))
+    NQX = max(NY//NX, 1)
     NQY = NY
+    Qord = 3
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
@@ -161,7 +162,7 @@ for iN, NX in enumerate(NX_array):
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
 
     # Assemble the mass matrix and forcing term
-    sim.computeSpatialDiscretization(f, NQX=NQX, NQY=NQY, Qord=3, quadType='g',
+    sim.computeSpatialDiscretization(f, NQX=NQX, NQY=NQY, Qord=Qord, quadType='g',
                                      massLumping=False)
 
     try:
@@ -207,7 +208,7 @@ for iN, NX in enumerate(NX_array):
             sim.b[n] = f.solution(sim.DoFs[n])
 
     t_setup[iN] = default_timer()-start_time
-    print(f'setup time = {t_setup[iN]} s')
+    print(f'setup time = {t_setup[iN]:.8e} s')
     start_time = default_timer()
 
     # Solve for the approximate solution
@@ -216,30 +217,28 @@ for iN, NX in enumerate(NX_array):
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=tolerance, atol=tolerance)
 
     t_solve[iN] = default_timer()-start_time
-    print(f'solve time = {t_solve[iN]} s')
+    print(f'solve time = {t_solve[iN]:.8e} s')
     start_time = default_timer()
 
     # compute the analytic solution and normalized error norms
     uExact = f.solution(sim.DoFs)
-
     E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf) / f.umax
     E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs) / f.umax
 
-    print(f'max error  = {E_inf[iN]}')
-    print(f'L2 error   = {E_2[iN]}\n')
+    print(f'max error  = {E_inf[iN]:.8e}')
+    print(f'L2 error   = {E_2[iN]:.8e}\n', flush=True)
 
-# with np.printoptions(formatter={'float': lambda x: format(x, '.8e')}):
-#     E_2
-#     E_inf
-#     t_setup
-#     t_solve
+# print summary
+print(f'xmax = {f.xmax}, {mapping}')
+print(f'px = {kwargs["px"]}, py = {kwargs["py"]}, seed = {kwargs["seed"]}')
+print(f'NQX = {NQX}, NQY = {NQY//NY}*NY, Qord = {Qord}')
+print(f'VCI: {sim.vci} using {sim.vci_solver}\n')
+with np.printoptions(formatter={'float': lambda x: format(x, '.8e')}):
+    print('E_2     =', repr(E_2))
+    print('E_inf   =', repr(E_inf))
+    print('t_setup =', repr(t_setup))
+    print('t_solve =', repr(t_solve))
 
-E_2
-E_inf
-t_setup
-t_solve
-
-np.set_printoptions(**old_printoptions)
 
 #%% Plotting
 
@@ -292,28 +291,28 @@ for yi in [0.4, 0.5, 0.6]:
 # cbar = plt.colorbar(field, format='%.0e')
 cbar = plt.colorbar(field)
 cbar.formatter.set_powerlimits((0, 0))
-plt.xlabel(r'$x$')
-plt.ylabel(r'$y$', rotation=0)
+ax1.set_xlabel(r'$x$')
+ax1.set_ylabel(r'$y$', rotation=0)
 if abs(f.xmax - 2*np.pi) < 1e-10:
-    plt.xticks(np.linspace(0, f.xmax, 5),
+    ax1.set_xticks(np.linspace(0, f.xmax, 5),
         ['0', r'$\pi/2$', r'$\pi$', r'$3\pi/2$', r'$2\pi$'])
 #  plt.xticks(np.linspace(0, 2*np.pi, 7),
 #      ['0',r'$\pi/3$',r'$2\pi/3$',r'$\pi$',r'$4\pi/3$',r'$5\pi/3$',r'$2\pi$'])
 else:
-    plt.xticks(np.linspace(0, f.xmax, 6))
-plt.margins(0,0)
+    ax1.set_xticks(np.linspace(0, f.xmax, 6))
+ax1.margins(0,0)
 
 # plot the error convergence
-ax1 = plt.subplot(122)
-plt.loglog(NX_array, E_inf, '.-', label=r'$E_\infty$')
-plt.loglog(NX_array, E_2, '.-', label=r'$E_2$')
-plt.minorticks_off()
+ax2 = plt.subplot(122)
+ax2.loglog(NX_array, E_inf, '.-', label=r'$E_\infty$')
+ax2.loglog(NX_array, E_2, '.-', label=r'$E_2$')
+ax1.set_minorticks_off()
 plt.xticks(NX_array, NX_array)
 plt.xlabel(r'$NX$')
 plt.ylabel(r'Magnitude of Error Norm')
 
 # plot the intra-step order of convergence
-ax2 = ax1.twinx()
+ax1R = ax1.twinx()
 logN = np.log(NX_array)
 logE_inf = np.log(E_inf)
 logE_2 = np.log(E_2)
@@ -330,8 +329,6 @@ plt.yticks(np.linspace(0,5,6))
 plt.ylabel(r'Intra-step Order of Convergence')
 ax1.legend()
 # lines, labels = ax1.get_legend_handles_labels()
-# lines2, labels2 = ax2.get_legend_handles_labels()
-# ax2.legend(lines + lines2, labels + labels2, loc='best')
 plt.margins(0,0)
 
 # plt.savefig(f"CD_{kwargs['px']}px_{kwargs['py']}py_notMassLumped_RK4.pdf",

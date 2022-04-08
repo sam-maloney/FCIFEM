@@ -153,49 +153,136 @@ class DirichletBoundary(Boundary):
             self.DirichletNodeX = [self.DirichletNodeX, self.DirichletNodeX]
         elif (type(NDX) is int) and (NDX < 0):
             NDX = -NDX
-            # bottomNodes = np.empty(NX*NDX+1)
-            # topNodes = np.empty(NX*NDX+1)
-            bottomNodes = -np.ones(NX*NDX+1)
-            topNodes = -np.ones(NX*NDX+1)
+
+            ##### map nearest y-nodes, fill full space with max NDX divisions #####
+            bottomNodes = []
+            topNodes = []
             # ignore warnings about nan's where p doesn't map to any boundaries
             with warnings.catch_warnings():
-                warnings.filterwarnings('ignore', r'invalid value encountered in')
+                warnings.filterwarnings('ignore', r'invalid value encountered')
                 for iPlane in range(NX):
+                    dx = sim.dx[iPlane]
                     zetaL = nodeX[iPlane]
                     zetaR = nodeX[iPlane+1]
-                    for y in (sim.nodeY[iPlane,1], sim.nodeY[iPlane,-2]):
-                        zetaBottom, zetaTop = self.B(np.array((zetaL, y)))
-                        zetaBottom = float(zetaBottom)
-                        zetaTop = float(zetaTop)
-                        if (zetaBottom > zetaL) and (zetaBottom < zetaR):
-                            bottomNodes[iPlane*NDX] = nodeX[iPlane]
-                            bottomNodes[iPlane*NDX+1:(iPlane+1)*NDX] = \
-                                np.linspace(zetaBottom, zetaR, NDX-1, False)
-                        if (zetaTop > zetaL) and (zetaTop < zetaR):
-                            topNodes[iPlane*NDX] = nodeX[iPlane]
-                            topNodes[iPlane*NDX+1:(iPlane+1)*NDX] = \
-                                np.linspace(zetaTop, zetaR, NDX-1, False)
-                    for y in (sim.nodeY[iPlane+1,1], sim.nodeY[iPlane+1,-2]):
-                        zetaBottom, zetaTop = self.B(np.array((zetaR, y)))
-                        zetaBottom = float(zetaBottom)
-                        zetaTop = float(zetaTop)
-                        if (zetaBottom > zetaL) and (zetaBottom < zetaR):
-                            bottomNodes[iPlane*NDX:(iPlane+1)*NDX] = \
-                                np.linspace(zetaL, zetaBottom, NDX, True)
-                        if (zetaTop > zetaL) and (zetaTop < zetaR):
-                            topNodes[iPlane*NDX:(iPlane+1)*NDX] = \
-                                np.linspace(zetaL, zetaTop, NDX, True)
-            bottomNodes[-1] = self.sim.xmax
-            topNodes[-1] = self.sim.xmax
-            if (np.any(topNodes == -1.0) or np.any(bottomNodes == -1.0)):
-                print('Error generating Dirichlet nodes')
-            self.DirichletNodeX = [bottomNodes, topNodes]
+                    zetaBL, zetaTL = map(float,
+                        self.B(np.array((zetaL, sim.nodeY[iPlane,1]))) )
+                    zetaBR, zetaTR = map(float,
+                        self.B(np.array((zetaR, sim.nodeY[iPlane+1,1]))) )
+                    if (zetaBL > zetaL) and (zetaBL < zetaR):
+                        dzeta = max(zetaBL - zetaL, dx/NDX)
+                        num = int((dx + 0.1*dzeta) / dzeta)
+                        bottomNodes.append(np.linspace(zetaL, zetaR, num, False))
+                    elif (zetaBR > zetaL) and (zetaBR < zetaR):
+                        dzeta = max(zetaR - zetaBR, dx/NDX)
+                        num = int((dx + 0.1*dzeta) / dzeta)
+                        bottomNodes.append(np.linspace(zetaL, zetaR, num, False))
+                    else:
+                        bottomNodes.append(np.array([zetaL]))
+                    zetaBL, zetaTL = map(float,
+                        self.B(np.array((zetaL, sim.nodeY[iPlane,-2]))) )
+                    zetaBR, zetaTR = map(float,
+                        self.B(np.array((zetaR, sim.nodeY[iPlane+1,-2]))) )
+                    if (zetaTL > zetaL) and (zetaTL < zetaR):
+                        dzeta = max(zetaTL - zetaL, dx/NDX)
+                        num = int((dx + 0.1*dzeta) / dzeta)
+                        topNodes.append(np.linspace(zetaL, zetaR, num, False))
+                    elif (zetaTR > zetaL) and (zetaTR < zetaR):
+                        dzeta = max(zetaR - zetaTR, dx/NDX)
+                        num = int((dx + 0.1*dzeta) / dzeta)
+                        topNodes.append(np.linspace(zetaL, zetaR, num, False))
+                    else:
+                        topNodes.append(np.array([zetaL]))
+            bottomNodes.append(np.array([self.sim.xmax]))
+            topNodes.append(np.array([self.sim.xmax]))
+            self.DirichletNodeX = [np.concatenate(bottomNodes),
+                                    np.concatenate(topNodes)]
+
+            # ##### map nearest y-nodes, fill remaining space with max NDX-1 divisions #####
+            # bottomNodes = []
+            # topNodes = []
+            # # ignore warnings about nan's where p doesn't map to any boundaries
+            # with warnings.catch_warnings():
+            #     warnings.filterwarnings('ignore', r'invalid value encountered')
+            #     for iPlane in range(NX):
+            #         zetaL = nodeX[iPlane]
+            #         zetaR = nodeX[iPlane+1]
+            #         zetaBL, zetaTL = map(float,
+            #             self.B(np.array((zetaL, sim.nodeY[iPlane,1]))) )
+            #         zetaBR, zetaTR = map(float,
+            #             self.B(np.array((zetaR, sim.nodeY[iPlane+1,1]))) )
+            #         if (zetaBL > zetaL) and (zetaBL < zetaR):
+            #             dx = max(zetaBL - zetaL, (zetaR - zetaBL)/(NDX-1))
+            #             num = int((zetaR - zetaBL + 0.1*dx) / dx)
+            #             bottomNodes.append(np.concatenate((np.array([zetaL]),
+            #                 np.linspace(zetaBL, zetaR, num, False))))
+            #         elif (zetaBR > zetaL) and (zetaBR < zetaR):
+            #             dx = max(zetaR - zetaBR, (zetaBR - zetaL)/(NDX-1))
+            #             num = int((zetaBR - zetaL + 0.1*dx) / dx) + 1
+            #             bottomNodes.append(np.linspace(zetaL, zetaBR, num))
+            #         else:
+            #             bottomNodes.append(np.array([zetaL]))
+            #         zetaBL, zetaTL = map(float,
+            #             self.B(np.array((zetaL, sim.nodeY[iPlane,-2]))) )
+            #         zetaBR, zetaTR = map(float,
+            #             self.B(np.array((zetaR, sim.nodeY[iPlane+1,-2]))) )
+            #         if (zetaTL > zetaL) and (zetaTL < zetaR):
+            #             dx = max(zetaTL - zetaL, (zetaR - zetaTL)/(NDX-1))
+            #             num = int((zetaR - zetaTL + 0.1*dx) / dx)
+            #             topNodes.append(np.concatenate((np.array([zetaL]),
+            #                 np.linspace(zetaTL, zetaR, num, False))))
+            #         elif (zetaTR > zetaL) and (zetaTR < zetaR):
+            #             dx = max(zetaR - zetaTR, (zetaTR - zetaL)/(NDX-1))
+            #             num = int((zetaTR - zetaL + 0.1*dx) / dx) + 1
+            #             topNodes.append(np.linspace(zetaL, zetaTR, num))
+            #         else:
+            #             topNodes.append(np.array([zetaL]))
+            # bottomNodes.append(np.array([self.sim.xmax]))
+            # topNodes.append(np.array([self.sim.xmax]))
+            # self.DirichletNodeX = [np.concatenate(bottomNodes),
+            #                         np.concatenate(topNodes)]
+
+            # ##### map nearest y-nodes, fill remaining space with NDX-1 divisions #####
+            # bottomNodes = -np.ones(NX*NDX+1)
+            # topNodes = -np.ones(NX*NDX+1)
+            # # ignore warnings about nan's where p doesn't map to any boundaries
+            # with warnings.catch_warnings():
+            #     warnings.filterwarnings('ignore', r'invalid value encountered')
+            #     for iPlane in range(NX):
+            #         zetaL = nodeX[iPlane]
+            #         zetaR = nodeX[iPlane+1]
+            #         for y in (sim.nodeY[iPlane,1], sim.nodeY[iPlane,-2]):
+            #             zetaBottom, zetaTop = self.B(np.array((zetaL, y)))
+            #             zetaBottom = float(zetaBottom)
+            #             zetaTop = float(zetaTop)
+            #             if (zetaBottom > zetaL) and (zetaBottom < zetaR):
+            #                 bottomNodes[iPlane*NDX] = nodeX[iPlane]
+            #                 bottomNodes[iPlane*NDX+1:(iPlane+1)*NDX] = \
+            #                     np.linspace(zetaBottom, zetaR, NDX-1, False)
+            #             if (zetaTop > zetaL) and (zetaTop < zetaR):
+            #                 topNodes[iPlane*NDX] = nodeX[iPlane]
+            #                 topNodes[iPlane*NDX+1:(iPlane+1)*NDX] = \
+            #                     np.linspace(zetaTop, zetaR, NDX-1, False)
+            #         for y in (sim.nodeY[iPlane+1,1], sim.nodeY[iPlane+1,-2]):
+            #             zetaBottom, zetaTop = self.B(np.array((zetaR, y)))
+            #             zetaBottom = float(zetaBottom)
+            #             zetaTop = float(zetaTop)
+            #             if (zetaBottom > zetaL) and (zetaBottom < zetaR):
+            #                 bottomNodes[iPlane*NDX:(iPlane+1)*NDX] = \
+            #                     np.linspace(zetaL, zetaBottom, NDX, True)
+            #             if (zetaTop > zetaL) and (zetaTop < zetaR):
+            #                 topNodes[iPlane*NDX:(iPlane+1)*NDX] = \
+            #                     np.linspace(zetaL, zetaTop, NDX, True)
+            # bottomNodes[-1] = self.sim.xmax
+            # topNodes[-1] = self.sim.xmax
+            # if (np.any(topNodes == -1.0) or np.any(bottomNodes == -1.0)):
+            #     print('Error generating Dirichlet nodes')
+            # self.DirichletNodeX = [bottomNodes, topNodes]
         else: # autogenerate top/bottom boundary nodes from nodeX/nodeY
             bottomNodes = []
             topNodes = []
             # ignore warnings about nan's where p doesn't map to any boundaries
             with warnings.catch_warnings():
-                warnings.filterwarnings('ignore', r'invalid value encountered in')
+                warnings.filterwarnings('ignore', r'invalid value encountered')
                 for iPlane in range(NX):
                     zetaL = nodeX[iPlane]
                     zetaR = nodeX[iPlane+1]
@@ -270,7 +357,7 @@ class DirichletBoundary(Boundary):
 
         # ignore warnings about nan's where p doesn't map to any boundaries
         with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', r'invalid value encountered in')
+            warnings.filterwarnings('ignore', r'invalid value encountered')
             zetaBottom, zetaTop = self.B(p)
             zetaBottom = float(zetaBottom)
             zetaTop = float(zetaTop)

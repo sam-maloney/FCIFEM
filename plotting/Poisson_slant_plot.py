@@ -13,8 +13,8 @@ import matplotlib.pyplot as plt
 # f(x,y) = 0.5*sin(n*(2pi*y - 2pi*x))*(1 + sin(2pi*y))
 # n = 8
 # Omega = (0,1) X (0,1)
-# Periodic BCs with slice VCI-C
-# NQX = 1, NQY = NY, Qord = 3, quadType = 'gauss', massLumping = False
+# Periodic BCs with VCI-C (slice-by-slice)
+# NQY = NY, Qord = 3, quadType = 'gauss', massLumping = False
 
 E_2_L = []
 E_inf_L = []
@@ -35,6 +35,7 @@ NY_R = []
 ##### Uniform grid spacing #####
 
 # StraightMapping()
+# NQX = 1
 E_2_L.append(np.array([2.73317422e-01, 1.07220109e-02, 3.66400910e-02, 8.59797844e-02,
         2.08355376e-02, 5.13614469e-03, 1.27914136e-03]))
 E_inf_L.append(np.array([7.25262020e-01, 2.38691930e-02, 8.44773077e-02, 2.05546489e-01,
@@ -48,6 +49,7 @@ NX_L.append(np.array([  4,   8,  16,  32,  64, 128, 256]))
 NY_L.append(1)
 
 # LinearMapping(1.0)
+# NQX = 1
 E_2_L.append(np.array([2.94343115e-01, 1.86838701e+00, 7.31461781e-02, 1.50512314e-02,
         4.17501343e-03, 1.11750114e-03, 5.27058899e-04]))
 E_inf_L.append(np.array([7.59346093e-01, 5.28205981e+00, 2.99162921e-01, 5.35721252e-02,
@@ -61,6 +63,7 @@ NX_L.append(np.array([  4,   8,  16,  32,  64, 128, 256]))
 NY_L.append(1)
 
 # # LinearMapping(1.0)
+# # NQX = 1
 # E_2_L.append(np.array([3.66295066e-02, 7.11117489e-02, 1.63786688e-02, 3.63824348e-03,
 #         8.93386567e-04, 2.21801641e-04, 5.52309137e-05]))
 # E_inf_L.append(np.array([7.32590132e-02, 1.71084837e-01, 3.49591059e-02, 7.59348966e-03,
@@ -74,6 +77,7 @@ NY_L.append(1)
 # NY_L.append(4)
 
 # # LinearMapping(1.0)
+# # NQX = 1
 # E_2_L.append(np.array([3.10433622e-02, 5.14015467e-02, 1.29429803e-02, 3.13668008e-03,
 #         7.79365287e-04, 1.94315497e-04]))
 # E_inf_L.append(np.array([8.15554956e-02, 1.37896376e-01, 3.45950235e-02, 7.75987017e-03,
@@ -87,6 +91,7 @@ NY_L.append(1)
 # NY_L.append(8)
 
 # # LinearMapping(1.0)
+# # NQX = 1
 # E_2_L.append(np.array([3.79285860e-02, 4.51282374e-02, 1.16327878e-02, 2.85512024e-03,
 #         7.10634169e-04, 1.77250267e-04]))
 # E_inf_L.append(np.array([8.61569372e-02, 1.08027035e-01, 2.83953209e-02, 6.56699440e-03,
@@ -143,9 +148,10 @@ NX_L.append(np.array([ 2,  4,  8, 16, 32, 64]))
 NY_L.append(16)
 
 
-##### px = py = 0.1 #####
+##### px = py = 0.1, seed = 42 #####
 
 # StraightMapping()
+# NQX = 1
 E_2_R.append(np.array([5.65605756e+00, 5.71803490e-01, 1.07925536e+00, 1.34975486e-01,
        2.50190204e-02, 5.69054413e-03, 1.35525260e-03]))
 E_inf_R.append(np.array([1.20542306e+01, 1.78702131e+00, 3.21913316e+00, 6.15480925e-01,
@@ -159,6 +165,7 @@ NX_R.append(np.array([  4,   8,  16,  32,  64, 128, 256]))
 NY_R.append(1)
 
 # LinearMapping(1.0)
+# NQX = 1
 E_2_R.append(np.array([1.14927325e+00, 1.37256646e+00, 1.20356283e+00, 8.37506735e-02,
        1.23340675e-02, 2.60364795e-03, 5.82840804e-04]))
 E_inf_R.append(np.array([3.85321838e+00, 4.80387343e+00, 4.03600553e+00, 4.19738035e-01,
@@ -172,6 +179,7 @@ NX_R.append(np.array([  4,   8,  16,  32,  64, 128, 256]))
 NY_R.append(1)
 
 # # LinearMapping(1.0)
+# # NQX = 1
 # E_2_R.append(np.array([5.21067337e+00, 6.22774311e-01, 2.73094276e-01, 4.22059139e-02,
 #        9.85303158e-03, 1.98549585e-03, 4.40299466e-04]))
 # E_inf_R.append(np.array([1.44942657e+01, 1.88536084e+00, 1.18084847e+00, 2.10525344e-01,
@@ -185,6 +193,7 @@ NY_R.append(1)
 # NY_R.append(4)
 
 # # LinearMapping(1.0)
+# # NQX = 1
 # E_2_R.append(np.array([1.59520803e+00, 5.86965808e-01, 6.24328691e-02, 1.78520827e-02,
 #        4.92260153e-03, 8.67773928e-04]))
 # E_inf_R.append(np.array([4.66516449e+00, 2.00237853e+00, 2.14842838e-01, 9.48346543e-02,
@@ -198,6 +207,7 @@ NY_R.append(1)
 # NY_R.append(8)
 
 # # LinearMapping(1.0)
+# # NQX = 1
 # E_2_R.append(np.array([1.92836973e-01, 2.29565763e-01, 3.80961279e-02, 7.35742303e-03,
 #        1.64210265e-03, 3.70110519e-04]))
 # E_inf_R.append(np.array([5.10917669e-01, 8.15336938e-01, 2.03375363e-01, 3.57510144e-02,
@@ -241,14 +251,14 @@ NY_R.append(8)
 # LinearMapping(1.0)
 # NQX = NY/NX = 16
 E_2_R.append(np.array([4.80954593e-02, 5.50201937e-02, 1.44564871e-02, 4.85386070e-03,
-        9.48869425e-04, np.nan]))
+        9.48869425e-04, 2.45790827e-04]))
 E_inf_R.append(np.array([1.53487332e-01, 1.87176664e-01, 4.81372300e-02, 2.82831253e-02,
-        5.38265125e-03, np.nan]))
+        5.38265125e-03, 1.3834221e-03]))
 # these timings run on tabuchi
 t_setup_R.append(np.array([3.84321927e+00, 1.88315809e+01, 2.26784287e+02, 1.56933466e+03,
-        1.23284896e+04, np.nan]))
+        1.23284896e+04, 8.8224625e+04]))
 t_solve_R.append(np.array([3.74156570e-02, 1.22569010e-02, 2.44721780e-02, 9.08271100e-02,
-        4.13082022e-01, np.nan]))
+        4.13082022e-01, 2.74627263e+00]))
 labels_R.append('aligned 1:16')
 NX_R.append(np.array([ 2,  4,  8, 16, 32, 64]))
 NY_R.append(16)
@@ -310,6 +320,7 @@ Nmin = min([min(N_L[i]) for i in range(len(N_L))])
 Nmax = max([max(N_L[i]) for i in range(len(N_L))])
 Nstep = 2
 axL1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
+axL1.set_title(r'Uniform Grid')
 axL1.set_xlabel(r'$\log_2(N_xN_y)$')
 axL1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axL1.legend(loc='lower left')
@@ -324,6 +335,7 @@ for i, error in enumerate(E_2_R):
                   linewidth=solid_linewidth)
 axR1.set_xticks(np.linspace(Nmin, Nmax, (Nmax - Nmin)//Nstep + 1))
 axR1.set_xlim(xlim)
+axR1.set_title(r'Perturbed Grid (up to 10\%)')
 axR1.set_xlabel(r'$\log_2(N_xN_y)$')
 axR1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axR1.legend(loc='lower left')

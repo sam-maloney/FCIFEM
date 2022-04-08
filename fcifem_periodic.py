@@ -359,6 +359,8 @@ class FciFemSim:
         None.
 
         """
+        self.vci = 'VC1 (assumed strain)'
+        self.vci_solver = None
         ndim = self.ndim
         nDoFs = self.nDoFs
         NX = self.NX
@@ -515,6 +517,8 @@ class FciFemSim:
         None.
 
         """
+        self.vci = 'VC2 (assumed strain)'
+        self.vci_solver = None
         ndim = self.ndim
         nDoFs = self.nDoFs
         NX = self.NX
@@ -690,6 +694,7 @@ class FciFemSim:
         None.
 
         """
+        self.vci = 'VC1-C (Node)'
         ndim = self.ndim
         nDoFs = self.nDoFs
         NX = self.NX
@@ -826,6 +831,7 @@ class FciFemSim:
                                           overwrite_A=True, overwrite_b=True)
         x[r:] = 0.
         self.xi = (ssqr.qmult(QR, x), r)
+        self.vci_solver = 'ssqr.QR_C'
 
         # self.xi = (np.zeros(nCells), 0)
 
@@ -848,6 +854,7 @@ class FciFemSim:
         # # ilu = sp_la.spilu(self.G)
         # # P = sp_la.LinearOperator(self.G.shape, lambda x: ilu.solve(x))
         # # self.xi = sp_la.lgmres(self.G, rhs, M=P, x0=v0, tol=tol, atol=tol)
+        # self.vci_solver = 'scipy.sparse.linalg.lsqr'
 
         # gd[index:index+nCells] = 1.0
         # ri[index:index+nCells] = 2*nDoFs
@@ -868,6 +875,7 @@ class FciFemSim:
         # # ilu = sp_la.spilu(self.G, fill_factor=1.)
         # # P = sp_la.LinearOperator(self.G.shape, lambda x: ilu.solve(x))
         # # self.xi = sp_la.lgmres(self.G, rhs, x0=v0, maxiter=maxit, tol=tol, atol=tol)
+        # self.vci_solver = 'scipy.sparse.linalg.lsqr'
 
         # pre-allocate arrays for stiffness matrix triplets
         nEntries = (2*ndim)**2
@@ -944,6 +952,7 @@ class FciFemSim:
         None.
 
         """
+        self.vci = 'VC1-C (cell)'
         ndim = self.ndim
         nDoFs = self.nDoFs
         NX = self.NX
@@ -1063,6 +1072,7 @@ class FciFemSim:
         # self.xi = sp_la.lsmr(self.G @ D, rhs, x0=v0, atol=tol, btol=tol, maxiter=maxit)
         self.xi = sp_la.lsqr(self.G @ D, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
         self.xi = (D @ self.xi[0], self.xi[1], self.xi[2], self.xi[3])
+        self.vci_solver = 'scipy.sparse.linalg.lsqr'
 
         index = 0
         for iQ, (indices, phis, gradphis, quadWeight, quad, cellId) in enumerate(self.store):
@@ -1128,6 +1138,7 @@ class FciFemSim:
         None.
 
         """
+        self.vci = 'VC1-C (point)'
         ndim = self.ndim
         nDoFs = self.nDoFs
         NX = self.NX
@@ -1254,6 +1265,7 @@ class FciFemSim:
                                           overwrite_A=True, overwrite_b=True)
         x[r:] = 0.
         self.xi = (ssqr.qmult(QR, x), r)
+        self.vci_solver = 'ssqr.QR_C'
 
         # ##### Using scipy.sparse.linalg, much slower, uses less memory #####
         # self.G = sp.csr_matrix((gd, (ri, ci)), shape=(2*nDoFs+1, nQuads * NX))
@@ -1264,6 +1276,7 @@ class FciFemSim:
         # tol = 1e-10
         # # self.xi = sp_la.lsmr(self.G, rhs, x0=v0, atol=tol, btol=tol, maxiter=maxit)
         # self.xi = sp_la.lsqr(self.G, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
+        # self.vci_solver = 'scipy.sparse.linalg.lsqr'
 
         index = 0
         for iQ, (indices, phis, gradphis, quadWeight, quad) in enumerate(self.store):
@@ -1337,9 +1350,9 @@ class FciFemSim:
         except:
             raise SystemExit("Unable to instantiate integrator of type "
                 f"{repr(Type)}. Should be a string containing one of "
-                "'LowStorageRK' ('RK' or 'LSRK') or 'BackwardEuler' ('BE'), a "
-                "type derived from integrators.Integrator, or an object of "
-                "such a type.")
+                "'LowStorageRK' ('RK' or 'LSRK'), CrankNicolson ('CN'), or "
+                "'BackwardEuler' ('BE'), a type derived from "
+                "integrators.Integrator, or an object of such a type.")
 
     def step(self, nSteps = 1, **kwargs):
         """Advance the simulation a given number of timesteps.

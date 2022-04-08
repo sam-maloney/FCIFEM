@@ -224,6 +224,8 @@ class FciFemSim:
         None.
 
         """
+        self.vci = None
+        self.vci_solver = None
         ndim = self.ndim
         nDoFs = self.nDoFs
         NX = self.NX
@@ -347,6 +349,8 @@ class FciFemSim:
         None.
 
         """
+        self.vci = 'VC1 (assumed strain)'
+        self.vci_solver = None
         ndim = self.ndim
         nDoFs = self.nDoFs
         NX = self.NX
@@ -488,6 +492,7 @@ class FciFemSim:
         None.
 
         """
+        self.vci = 'VC1-C (whole domain)'
         ndim = self.ndim
         nDoFs = self.nDoFs
         nNodes = self.nNodes
@@ -672,6 +677,7 @@ class FciFemSim:
         # x[r:] = 0.
         # self.xi = (ssqr.qmult(QR, x), r)
         # print(f'xi solve time = {default_timer()-start_time} s')
+        # self.vci_solver = 'ssqr.QR_C'
 
         ##### Using SuiteSparse min2norm (QR based solver) #####
         G = sp.csc_matrix((gd[:index], (ri[:index], ci[:index])),
@@ -682,6 +688,7 @@ class FciFemSim:
         rhs = np.append(self.gradphiSums.T.ravel(), 0.)
         self.xi = (ssqr.min2norm(G, rhs).ravel(), 0)
         print(f'xi solve time = {default_timer()-start_time} s')
+        self.vci_solver = 'ssqr.min2norm'
 
         # ##### Using scipy.sparse.linalg, much slower, but uses less memory #####
         # self.G = sp.csr_matrix((gd[:index], (ri[:index], ci[:index])),
@@ -695,6 +702,7 @@ class FciFemSim:
         # # self.xi = sp_la.lsmr(self.G, rhs, x0=v0, atol=tol, btol=tol, maxiter=maxit)
         # self.xi = sp_la.lsqr(self.G, rhs, x0=v0, atol=tol, btol=tol, iter_lim=maxit)
         # print(f'xi solve time = {default_timer()-start_time} s')
+        # self.vci_solver = 'scipy.sparse.linalg.lsqr'
 
         # ##### Using scipy.optimize.lsq_linear #####
         # ##### VERY SLOW, but guarantees non-negative quadWeights #####
@@ -706,6 +714,7 @@ class FciFemSim:
         # tol = 1e-10
         # self.xi = lsq_linear(self.G, rhs, (bounds,np.inf), max_iter=100,
         #                      tol=tol)
+        # self.vci_solver = 'scipy.optimize.lsq_linear'
 
         self.rNew = np.zeros((nNodes, self.ndim, 3))
 
@@ -796,6 +805,7 @@ class FciFemSim:
         None.
 
         """
+        self.vci = 'VC1-C (slice-by-slice)'
         ndim = self.ndim
         nDoFs = self.nDoFs
         nNodes = self.nNodes
@@ -900,6 +910,7 @@ class FciFemSim:
             # #                   shape=(2*nNodes + 1, nQuads))
             # rhs = np.append(dx, sliceBoundaryIntegrals.T.ravel())
             # xi = ssqr.min2norm(G, rhs).ravel()
+            # self.vci_solver = 'ssqr.min2norm'
 
             ##### Using scipy.sparse.linalg #####
             ##### slower, but uses less RAM and (slightly) more stable #####
@@ -914,6 +925,7 @@ class FciFemSim:
             # # xi = D @ sp_la.lsqr(G @ D, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
             # xi = sp_la.lsmr(G, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
             xi = sp_la.lsqr(G, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
+            self.vci_solver = 'scipy.sparse.linalg.lsqr'
 
             # # attempting precondtioning with R factor; was not helpful
             # G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
@@ -967,6 +979,7 @@ class FciFemSim:
             # # cu_xi = cu_lsqr(cu_G, cu_rhs)[0] # raises LinAlgError: Last 2 dimensions of the array must be square
             # cu_xi = cu_lsmr(cu_G, cu_rhs, atol=tol, btol=tol, maxiter=maxit)[0]
             # xi = cupy.asnumpy(cu_xi)
+            # self.vci_solver = 'cupyx.scipy.sparse.linalg.lsmr'
 
             # ##### Using scipy.optimize.lsq_linear #####
             # ##### VERY SLOW, but guarantees non-negative quadWeights #####
@@ -978,6 +991,7 @@ class FciFemSim:
             # # maxit = nQuads
             # tol = 1e-10
             # xi = lsq_linear(G, rhs, (0, np.inf), max_iter=100, tol=tol).x
+            # self.vci_solver = 'scipy.optimize.lsq_linear'
 
             # print(f'xi solve time = {default_timer()-start_time} s')
 
@@ -1072,9 +1086,9 @@ class FciFemSim:
         except:
             raise SystemExit("Unable to instantiate integrator of type "
                 f"{repr(Type)}. Should be a string containing one of "
-                "'LowStorageRK' ('RK' or 'LSRK') or 'BackwardEuler' ('BE'), a "
-                "type derived from integrators.Integrator, or an object of "
-                "such a type.")
+                "'LowStorageRK' ('RK' or 'LSRK'), CrankNicolson ('CN'), or "
+                "'BackwardEuler' ('BE'), a type derived from "
+                "integrators.Integrator, or an object of such a type.")
 
     def step(self, nSteps = 1, **kwargs):
         """Advance the simulation a given number of timesteps.

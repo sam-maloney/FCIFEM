@@ -42,6 +42,7 @@ class UnityFunction:
     umax = 1.
     dudyMax = 1.
     dudxMax = 1.
+    dudQMax = 0
 
     def __call__(self, p):
         return np.ones(p.size // 2)
@@ -86,6 +87,7 @@ class QuadraticTestProblem:
     umax = xmax
     dudyMax = N*xmax
     dudxMax = 1 + 2*a*N*xmax**2 + b*N*xmax
+    dudQMax = 1 # technically also reduced by slope of mapping
 
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
@@ -126,8 +128,8 @@ kwargs={
     'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
-start = 1
-stop = 1
+start = 5
+stop = 5
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -136,6 +138,8 @@ t_setup = np.empty(nSamples)
 t_solve = np.empty(nSamples)
 dxi = []
 
+print('boundary_test.py\n')
+
 # loop over N to test convergence where N is the number of
 # grid cells along one dimension, each cell forms 2 triangles
 # therefore number of nodes equals (N+1)*(N+1)
@@ -143,31 +147,31 @@ for iN, NX in enumerate(NX_array):
 
     start_time = default_timer()
 
-    NY = 16*NX
-    # NY = NX
+    NY = 1*NX
+    # NY = NX // 2
     # NY = max(int(f.dudyMax / f.xmax) * NX, NX)
 
     # NQX = max(int(f.xmax*NY / (NX*duRatio)), 1)
-    NQX = 32
+    NQX = 1
 
     NQY = NY
+    NDX = 1
 
     # initialize simulation class
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
 
     # BC = fcifem.boundaries.PeriodicBoundary(sim)
     # BC = fcifem.boundaries.DirichletXPeriodicYBoundary(sim, f.solution)
-    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, NDX=0)
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, NDX=NDX)
     sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
 
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
 
-    # Assemble the mass matrix and forcing term
     # if NQX == 1:
     #     Qord = 2
     # else:
     #     Qord = 1
-    Qord = 2
+    Qord = 3
 
     vci = 'VCI-C'
     # vci = None
@@ -177,6 +181,7 @@ for iN, NX in enumerate(NX_array):
         sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
         # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCIold
 
+    # Assemble the mass matrix and forcing term
     sim.computeSpatialDiscretization(f, NQX=NQX, NQY=NQY, Qord=Qord,
         quadType='g', massLumping=False, includeBoundaries=True)
 
@@ -186,7 +191,7 @@ for iN, NX in enumerate(NX_array):
         pass
 
     t_setup[iN] = default_timer()-start_time
-    print(f'setup time = {t_setup[iN]} s')
+    print(f'setup time = {t_setup[iN]:.8e} s')
     start_time = default_timer()
 
     # Solve for the approximate solution
@@ -195,19 +200,30 @@ for iN, NX in enumerate(NX_array):
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=tolerance, atol=tolerance)
 
     t_solve[iN] = default_timer()-start_time
-    print(f'solve time = {t_solve[iN]} s')
+    print(f'solve time = {t_solve[iN]:.8e} s')
     start_time = default_timer()
 
     # compute the analytic solution and error norms
     uExact = f.solution(sim.DoFs)
-
     E_inf[iN] = np.linalg.norm(sim.u - uExact, np.inf) / f.umax
     E_2[iN] = np.linalg.norm(sim.u - uExact)/np.sqrt(sim.nDoFs) / f.umax
 
-    print(f'max error = {E_inf[iN]}')
-    print(f'L2 error  = {E_2[iN]}')
+    print(f'max error  = {E_inf[iN]:.8e}')
+    print(f'L2 error   = {E_2[iN]:.8e}')
     # print(f'cond(K) = {np.linalg.cond(sim.K.A)}')
-    print('')
+    print('', flush=True)
+
+# print summary
+print(f'xmax = {f.xmax}, {mapping}')
+print(f'px = {kwargs["px"]}, py = {kwargs["py"]}, seed = {kwargs["seed"]}')
+print(f'NDX = {NDX}, NQX = {NQX}, NQY = {NQY//NY}*NY, Qord = {Qord}')
+print(f'VCI: {sim.vci} using {sim.vci_solver}\n')
+with np.printoptions(formatter={'float': lambda x: format(x, '.8e')}):
+    print('E_2     =', repr(E_2))
+    print('E_inf   =', repr(E_inf))
+    print('t_setup =', repr(t_setup))
+    print('t_solve =', repr(t_solve))
+
 
 #%% Plotting
 
