@@ -128,8 +128,8 @@ kwargs={
     'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
-start = 5
-stop = 5
+start = 1
+stop = 6
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -148,7 +148,7 @@ for iN, NX in enumerate(NX_array):
     start_time = default_timer()
 
     NY = 1*NX
-    # NY = NX // 2
+    # NY = NX // 4
     # NY = max(int(f.dudyMax / f.xmax) * NX, NX)
 
     # NQX = max(int(f.xmax*NY / (NX*duRatio)), 1)
@@ -156,6 +156,10 @@ for iN, NX in enumerate(NX_array):
 
     NQY = NY
     NDX = 1
+
+    # NX = 2
+    # NQX = NY // 2
+    # NDX = NY // 2
 
     # initialize simulation class
     sim = fcifem.FciFemSim(NX, NY, **kwargs)

@@ -120,17 +120,47 @@ NY.append(1)
 # scipy.sparse.linalg.lsqr (no diagonal preconditioning)
 # StraightMapping()
 # NQX = 4, NDX = 1, Qord = 3
-E_2.append(np.array([5.98419021e+00, 1.84821982e+00, 6.73724817e-01, 3.33756682e-01,
-       9.75525685e-02, 2.85139264e-02, 8.16929749e-03]))
-E_inf.append(np.array([9.38487821e+00, 4.74091396e+00, 2.51045126e+00, 1.16121631e+00,
-       4.12906901e-01, 1.39264881e-01, 4.45868675e-02]))
-t_setup.append(np.array([1.73296966e-01, 7.48117318e-01, 3.10649718e+00, 1.30626945e+01,
-       5.46568710e+01, 2.36789972e+02, 1.10610214e+03]))
-t_solve.append(np.array([6.48439978e-04, 2.56401999e-03, 9.53683341e-02, 2.74535109e-02,
-       5.08006059e-02, 2.33789191e-01, 2.42643756e+00]))
+E_2.append(np.array([6.77206423e-01, 4.44874294e-01, 1.07533511e-01, 3.11169698e-02,
+       8.86951767e-03, 2.15558737e-03, 5.34942837e-04]))
+E_inf.append(np.array([1.06518368e+00, 1.13111292e+00, 3.46678182e-01, 1.19510732e-01,
+       3.87651494e-02, 8.74076338e-03, 2.41205703e-03]))
+t_setup.append(np.array([1.72815327e-01, 7.66174144e-01, 3.11436910e+00, 1.30867562e+01,
+       5.42829741e+01, 2.32677263e+02, 1.02467466e+03]))
+t_solve.append(np.array([6.86784973e-04, 2.90626893e-03, 7.22267013e-03, 1.41432660e-02,
+       3.61354090e-02, 1.81236654e-01, 1.55928564e+00]))
 labels.append('unaligned 1:4')
 NX.append(np.array([  2,   4,   8,  16,  32,  64, 128]))
 NY.append(4)
+
+# # scipy.sparse.linalg.lsqr (no diagonal preconditioning)
+# # StraightMapping()
+# # NQX = NDX = 4, Qord = 3
+# E_2.append(np.array([5.98419021e+00, 1.84821982e+00, 6.73724817e-01, 3.33756682e-01,
+#        9.75525685e-02, 2.85139264e-02, 8.16929749e-03]))
+# E_inf.append(np.array([9.38487821e+00, 4.74091396e+00, 2.51045126e+00, 1.16121631e+00,
+#        4.12906901e-01, 1.39264881e-01, 4.45868675e-02]))
+# t_setup.append(np.array([1.73296966e-01, 7.48117318e-01, 3.10649718e+00, 1.30626945e+01,
+#        5.46568710e+01, 2.36789972e+02, 1.10610214e+03]))
+# t_solve.append(np.array([6.48439978e-04, 2.56401999e-03, 9.53683341e-02, 2.74535109e-02,
+#        5.08006059e-02, 2.33789191e-01, 2.42643756e+00]))
+# labels.append('unaligned 1:4')
+# NX.append(np.array([  2,   4,   8,  16,  32,  64, 128]))
+# NY.append(4)
+
+# scipy.sparse.linalg.lsqr (no diagonal preconditioning)
+# StraightMapping()
+# NQX = NDX = 1, Qord = 3
+E_2.append(np.array([1.93016608e-01, 5.42516299e-01, 1.81324563e-01, 3.41553860e-02,
+       7.86403836e-03, 1.93612406e-03, 4.80130397e-04]))
+E_inf.append(np.array([3.46716953e-01, 1.20586087e+00, 4.68636705e-01, 1.48839580e-01,
+       3.62532653e-02, 9.84862663e-03, 2.55229285e-03]))
+t_setup.append(np.array([5.49908010e-02, 2.15229524e-01, 8.70006805e-01, 3.59690338e+00,
+       1.52602453e+01, 7.74380201e+01, 4.25027555e+02]))
+t_solve.append(np.array([6.29720045e-04, 2.77298689e-03, 7.62669789e-03, 1.36935469e-02,
+       3.67647989e-02, 2.05703075e-01, 1.73591299e+00]))
+labels.append('unaligned 4:1')
+NX.append(np.array([  8,  16,  32,  64, 128, 256, 512]))
+NY.append(0.25)
 
 # scipy.sparse.linalg.lsqr (no diagonal preconditioning)
 # QuadraticMapping(0.95, 0.05)
@@ -267,6 +297,7 @@ plt.rc('markers', fillstyle='full')
 plt.rc('lines', markersize=5.0)
 plt.rc('pdf', fonttype=42)
 plt.rc('text', usetex=True)
+plt.rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
 # fontsize : int or {'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'}
 # plt.rc('font', size='small')
 plt.rc('legend', fontsize='small')

@@ -122,6 +122,7 @@ plt.rc('markers', fillstyle='full')
 plt.rc('lines', markersize=5.0, linewidth=solid_linewidth)
 plt.rc('pdf', fonttype=42)
 plt.rc('text', usetex=True)
+plt.rc('font', **{'family': 'serif', 'serif': ['Computer Modern']})
 # fontsize : int or {'xx-small', 'x-small', 'small', 'medium', 'large', 'x-large', 'xx-large'}
 # plt.rc('font', size='small')
 plt.rc('legend', fontsize='small')
@@ -178,6 +179,7 @@ for i, error in enumerate(E_2_L):
 axL2.axhline(2, linestyle=':', color=black, label='Expected order', zorder=0,
              linewidth=dashed_linewidth)
 # axL1.minorticks_off()
+axL1.set_title(r'Doubly-Periodic BCs')
 axL1.set_xlabel(r'$\log_2(N_xN_y)$')
 axL1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axL2.set_ylabel(r'Intra-step Order of Convergence')
@@ -213,6 +215,7 @@ for i, error in enumerate(E_2_R):
 axR2.axhline(2, linestyle=':', color=black, label='Expected order', zorder=0,
              linewidth=dashed_linewidth)
 # axR1.minorticks_off()
+axR1.set_title('Dirichlet BCs')
 axR1.set_xlabel(r'$\log_2(N_xN_y)$')
 axR1.set_ylabel(r'$|E_2|$', rotation=0, labelpad=10)
 axR2.set_ylabel(r'Intra-step Order of Convergence')
@@ -225,4 +228,4 @@ axR2.set_ylim(ordb, ordt)
 axR2.set_yticks(np.linspace(ordb, ordt, int((ordt - ordb)/ordstep) + 1))
 axR1.set_ylim(top=2)
 
-fig.savefig('L2_conv.pdf', bbox_inches='tight', pad_inches=0)
+# fig.savefig('L2_conv.pdf', bbox_inches='tight', pad_inches=0)
