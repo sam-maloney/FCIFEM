@@ -103,20 +103,20 @@ class QuadraticTestProblem:
         y = p.reshape(-1,2)[:,1]
         return x*np.sin(self.N*(y - self.a*x**2 - self.b*x))
 
-f = QuadraticTestProblem()
-# f = linearPatch()
+# f = QuadraticTestProblem()
+f = linearPatch()
 # f = sinXsinY()
 # f = UnityFunction()
 
 duRatio = f.dudyMax / f.dudxMax
 
 # mapping = fcifem.mappings.StraightMapping()
-# mapping = fcifem.mappings.LinearMapping(1/f.xmax)
-mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
+mapping = fcifem.mappings.LinearMapping(1/f.xmax)
+# mapping = fcifem.mappings.QuadraticMapping(f.a, f.b)
 
 
 #%%
-perturbation = 0.1
+perturbation = 0.
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
@@ -128,8 +128,8 @@ kwargs={
     'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
-start = 1
-stop = 6
+start = 2
+stop = 4
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
