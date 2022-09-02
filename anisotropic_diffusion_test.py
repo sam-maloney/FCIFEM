@@ -9,116 +9,78 @@ import matplotlib.pyplot as plt
 import scipy.sparse.linalg as sp_la
 
 import fcifem
-# import fcifem_periodic as fcifem
 
 from timeit import default_timer
 
-class slantedTestProblem:
+class gaussXY:
     xmax = 1.
     ymax = 1.
-    xfac = 2*np.pi/xmax
-    yfac = 2*np.pi/ymax
-
-    n = 8
-
-    n2 = n*n
-    yf2 = yfac*yfac
-    _2nyf2 = 2*n*yf2
-    n2xf2pyf2 = n2*(xfac*xfac + yf2)
-    n2xf2pyf2pyf2 = n2xf2pyf2 + yf2
-    A = 0.5 / n2xf2pyf2
-    B = 0.5 / (n2xf2pyf2pyf2 - _2nyf2*_2nyf2/n2xf2pyf2pyf2)
-    C = B*_2nyf2 / n2xf2pyf2pyf2
-
-    aA = abs(A)
-    aB = abs(B)
-    aC = abs(C)
-    umax = aA + aB + aC
-    dudxMax = umax*xfac*n
-    dudyMax = yfac*(aA*n + (aB+aC)*(1+n))
-    dudQMax = yfac*(aB+aC)/np.sqrt(2)
-
-    dfdxMax = xfac*n
-    dfdyMax = yfac*(n + 0.5)
-    dfdQMax = 0.5*yfac/np.sqrt(2)
-
+    amplitude = 1.0
+    umax = amplitude
+    x0 = 0.5
+    y0 = 0.5
+    sigmax = 0.1
+    sigmay = 0.1
+    integral = 2*np.pi*amplitude*sigmax*sigmay
+    normalization = integral / (xmax*ymax)
+    
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        yarg = self.yfac*y
-        return 0.5*np.sin(self.n*(yarg - self.xfac*x))*(1 + np.sin(yarg))
-
+        return self.amplitude*np.exp(-0.5*(((x - self.x0)/self.sigmax)**2
+                                         + ((y - self.y0)/self.sigmay)**2)) \
+            - self.normalization
+    
     def solution(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        yarg = self.yfac*y
-        xyarg = self.n*(yarg - self.xfac*x)
-        return self.A*np.sin(xyarg) + self.B*np.sin(yarg)*np.sin(xyarg) \
-                                    + self.C*np.cos(yarg)*np.cos(xyarg)
+        return np.zeros(p.size // 2)
 
-
-class simplifiedSlantProblem:
+    
+class slantedSin:
     xmax = 1.
     ymax = 1.
-    n = 2
-
-    xfac = 2*np.pi/xmax
-    yfac = 2*np.pi/ymax
-    umax = 1/(2*n*n*(yfac*yfac + xfac*xfac))
-    dudxMax = umax*xfac*n
-    dudyMax = umax*yfac*n
-    dudQMax = 0
-
+    umax = 1.
+    nx = 1
+    ny = 2
+    theta = np.arctan(nx/ny)
+    xfac = 2*np.pi*nx
+    yfac = 2*np.pi*ny
+    
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return 0.5*np.sin(self.n*(self.yfac*y - self.xfac*x))
-
+        return np.sin(self.xfac*x - self.yfac*y)
+    
     def solution(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        return self.umax * np.sin(self.n*(self.yfac*y - self.xfac*x))
+        return self.__call__(p)
 
-
-class sinXsinY:
-    xmax = 1.
-    ymax = 1.
-    xfac = 2*np.pi/xmax
-    yfac = 2*np.pi/ymax
-    umax = (1 / (xfac**2 + yfac**2))
-    dudxMax = umax*xfac
-    dudyMax = umax*yfac
-
-    def __call__(self, p):
-        x = p.reshape(-1,2)[:,0]
-        y = p.reshape(-1,2)[:,1]
-        return np.sin(self.xfac*x)*np.sin(self.yfac*y)
-
-    def solution(self, p):
-        return self.umax * self(p)
-
-f = slantedTestProblem()
-# f = simplifiedSlantProblem()
-# f = sinXsinY()
+# f = gaussXY()
+f = slantedSin()
 
 # mapping = fcifem.mappings.SinusoidalMapping(0.2, -0.25*f.xmax, f.xmax)
-mapping = fcifem.mappings.LinearMapping(1/f.xmax)
-# mapping = fcifem.mappings.StraightMapping()
+# mapping = fcifem.mappings.LinearMapping(1/f.xmax)
+mapping = fcifem.mappings.StraightMapping()
 
-perturbation = 0.1
+D_a = 1.
+D_i = 0.
+theta = f.theta
+diffusivity = D_a*np.array([[np.cos(theta)**2, np.sin(theta)*np.cos(theta)],
+                            [np.sin(theta)*np.cos(theta), np.sin(theta)**2]])
+diffusivity += D_i*np.eye(2)
+
+perturbation = 0.
 kwargs={
     'mapping' : mapping,
     'dt' : 1.,
     'velocity' : np.array([0., 0.]),
-    'diffusivity' : 1., # Makes diffusivity matrix K into Poisson operator
+    'diffusivity' : diffusivity,
     'px' : perturbation,
     'py' : perturbation,
     'seed' : 42,
     'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
-start = 1
-stop = 6
+start = 2
+stop = 5
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
 E_inf = np.empty(nSamples)
@@ -168,42 +130,11 @@ for iN, NX in enumerate(NX_array):
     except:
         pass
 
-    # sim.K.data[0] = 1.
-    # sim.K.data[1:sim.K.indptr[1]] = 0.
-    # sim.b[0] = f.solution(sim.DoFs[0])
-
-    ##### Enforce exact solution constraints directly #####
-
-    # sim.K.data[0] = 1.
-    # sim.K.data[1:sim.K.indptr[1]] = 0.
-    # sim.b[0] = 0.
-
-    # n = int(NY/2)
-    # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    # sim.K[n,n] = 1.
-    # sim.b[n] = 0., label='Expected'
-
-    # n = int(NX*NY/2)
-    # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    # sim.K[n,n] = 1.
-    # sim.b[n] = 0.
-
-    # # n = int(NX*NY*3/4)
-    # # sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    # # sim.K[n,n] = 1.
-    # # sim.b[n] = 0.
-
-    # Centre point
-    n = int(NX*NY/2 + NY/2)
-    sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-    sim.K[n,n] = 1.
-    sim.b[n] = f.solution(sim.DoFs[n])
-
-    for n, node in enumerate(sim.DoFs):
-        if node.prod() == 0.:
-            sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
-            sim.K[n,n] = 1.
-            sim.b[n] = f.solution(sim.DoFs[n])
+    # for n, node in enumerate(sim.DoFs):
+    #     if node.prod() == 0.:
+    #         sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
+    #         sim.K[n,n] = 1.
+    #         sim.b[n] = f.solution(sim.DoFs[n])
 
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]:.8e} s')

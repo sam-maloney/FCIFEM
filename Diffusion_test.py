@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jun  8 13:47:07 2020
+@author: Samuel A. Maloney
 
-@author: samal
 """
 
 import numpy as np
@@ -15,8 +14,8 @@ import fcifem
 
 from timeit import default_timer
 
-# mapping = fcifem.SinusoidalMapping(0.2, -np.pi/2)
-mapping = fcifem.StraightMapping()
+# mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
+mapping = fcifem.mappings.StraightMapping()
 
 class sinXY:
     D = 0.01 # diffusivity constant (anisotropic)
@@ -69,10 +68,9 @@ for iN, NX in enumerate(NX_array):
 
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
+    sim.setInitialConditions(u, mapped=False)
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nNodes}')
-    
-    sim.setInitialConditions(u, mapped=False)
     
     # Assemble the stiffness matrix and itialize time-stepping scheme
     sim.computeSpatialDiscretization(NQX=6, NQY=NY, Qord=3, quadType='g',

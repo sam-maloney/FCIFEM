@@ -1,8 +1,5 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Mon Nov 15 15:33:58 2021
-
 @author: Samuel A. Maloney
 
 """
@@ -130,7 +127,7 @@ class StraightMapping(Mapping):
     
     def deriv(self, points):
         nPoints = int(points.size / 2)
-        return np.repeat(0., nPoints)
+        return np.zeros(nPoints)
     
     def B(self, points):
         nPoints = points.size // 2

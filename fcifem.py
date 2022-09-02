@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Jun  8 13:47:07 2020
-
 @author: Samuel A. Maloney
 
 """
