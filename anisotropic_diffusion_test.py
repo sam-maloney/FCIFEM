@@ -7,6 +7,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.sparse.linalg as sp_la
+from scipy.special import erf
 
 import fcifem
 
@@ -15,24 +16,33 @@ from timeit import default_timer
 class gaussXY:
     xmax = 1.
     ymax = 1.
-    amplitude = 1.0
-    umax = amplitude
+    A = 1.0
+    umax = A
     x0 = 0.5
     y0 = 0.5
     sigmax = 0.1
     sigmay = 0.1
-    integral = 2*np.pi*amplitude*sigmax*sigmay
+    integral = np.pi*A*sigmax*sigmay
     normalization = integral / (xmax*ymax)
+    theta = np.pi/4
     
     def __call__(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
-        return self.amplitude*np.exp(-0.5*(((x - self.x0)/self.sigmax)**2
-                                         + ((y - self.y0)/self.sigmay)**2)) \
-            - self.normalization
+        return self.A*np.exp( -((x - self.x0)/self.sigmax)**2
+                              -((y - self.y0)/self.sigmay)**2 ) \
+             - self.normalization
     
     def solution(self, p):
-        return np.zeros(p.size // 2)
+        x = p.reshape(-1,2)[:,0] - self.x0
+        y = p.reshape(-1,2)[:,1] - self.y0
+        A = self.A
+        sx = self.sigmax
+        sy = self.sigmay
+        rp = np.sqrt(np.pi)
+        return 0.25*A*rp*( rp*sx*sy*erf(x/sx)*erf(y/sy)
+                    + sx*np.exp(-y*y/sy)*(x*erf(x/sx)+sx*np.exp(-x*x/sx)/rp)
+                    + sy*np.exp(-x*x/sx)*(y*erf(y/sy)+sy*np.exp(-y*y/sy)/rp) )
 
     
 class slantedSin:
@@ -46,19 +56,54 @@ class slantedSin:
     yfac = 2*np.pi*ny
     
     def __call__(self, p):
+        return np.zeros(p.size // 2)
+    
+    def solution(self, p):
         x = p.reshape(-1,2)[:,0]
         y = p.reshape(-1,2)[:,1]
         return np.sin(self.xfac*x - self.yfac*y)
     
+
+class gaussUV:
+    xmax = 1.
+    ymax = 1.
+    r2inv = 1/np.sqrt(2)
+    A = 1.0
+    umax = A
+    u0 = r2inv
+    v0 = 0
+    sigmau = 0.1
+    sigmav = 0.1
+    integral = np.pi*A*sigmau*sigmav
+    normalization = integral / (xmax*ymax)
+    theta = np.pi/4
+    
+    def __call__(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        u = (x + y)*self.r2inv - self.u0
+        v = (x - y)*self.r2inv - self.v0
+        return self.A*np.exp(-(u/self.sigmau)**2) * np.exp(-(v/self.sigmav)**2)
+    
     def solution(self, p):
-        return self.__call__(p)
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        u = (x + y)*self.r2inv - self.u0
+        v = (x - y)*self.r2inv - self.v0
+        A = self.A
+        su = self.sigmau
+        sv = self.sigmav
+        rp = np.sqrt(np.pi)
+        return 0.5*A*rp * np.exp(-(v/sv)**2) \
+                        * (u*erf(u/su) + su*np.exp(-(u/su)**2)/rp)
+    
 
 # f = gaussXY()
-f = slantedSin()
+# f = slantedSin()
+f = gaussUV()
 
-# mapping = fcifem.mappings.SinusoidalMapping(0.2, -0.25*f.xmax, f.xmax)
-# mapping = fcifem.mappings.LinearMapping(1/f.xmax)
-mapping = fcifem.mappings.StraightMapping()
+mapping = fcifem.mappings.LinearMapping(1/f.xmax)
+# mapping = fcifem.mappings.StraightMapping()
 
 D_a = 1.
 D_i = 0.
@@ -79,7 +124,7 @@ kwargs={
     'xmax' : f.xmax }
 
 # allocate arrays for convergence testing
-start = 2
+start = 5
 stop = 5
 nSamples = np.rint(stop - start + 1).astype('int')
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int')
@@ -109,15 +154,12 @@ for iN, NX in enumerate(NX_array):
     # allocate arrays and compute grid
     sim = fcifem.FciFemSim(NX, NY, **kwargs)
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
-    sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
     # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCIold
-    ##### These require the fcifem_periodic version of the module #####
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationQuadraticVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativePointVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeCellVCI
-    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeNodeVCI
-
-    sim.setInitialConditions(f)
+    
+    BC = fcifem.boundaries.DirichletBoundary(sim, f.solution, NDX=1)
+    sim.setInitialConditions(np.zeros(BC.nDoFs), mapped=False, BC=BC)
+    # sim.setInitialConditions(f)
 
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
 
@@ -135,6 +177,12 @@ for iN, NX in enumerate(NX_array):
     #         sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
     #         sim.K[n,n] = 1.
     #         sim.b[n] = f.solution(sim.DoFs[n])
+    
+    # for n, node in enumerate(sim.DoFs):
+    #     if (node[0] == 0.) and (abs(node[1] - 0.5) < 1e-10):
+    #         sim.K.data[sim.K.indptr[n]:sim.K.indptr[n+1]] = 0.
+    #         sim.K[n,n] = 1.
+    #         sim.b[n] = 0.
 
     t_setup[iN] = default_timer()-start_time
     print(f'setup time = {t_setup[iN]:.8e} s')
@@ -201,16 +249,19 @@ vmin = -maxAbsErr
 vmax = maxAbsErr
 
 ax1 = plt.subplot(121)
-ax1.set_title('Final Solution')
+# ax1.set_title('Absolute Error')
 # field = ax1.tripcolor(sim.X, sim.Y, error, shading='gouraud'
-#                        ,cmap='seismic', vmin=vmin, vmax=vmax)
+#                         ,cmap='seismic', vmin=vmin, vmax=vmax)
 # field = ax1.tripcolor(sim.DoFs[:,0], sim.DoFs[:,1], sim.u - uExact
 #                     ,shading='gouraud', cmap='seismic', vmin=vmin, vmax=vmax)
-field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
-# field = ax1.tripcolor(sim.X, sim.Y, exactSol, shading='gouraud')
+# ax1.set_title('Final Solution')
+# field = ax1.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud')
+ax1.set_title('Exact Solution')
+field = ax1.tripcolor(sim.X, sim.Y, exactSol, shading='gouraud')
+# ax1.set_title('Forcing Function')
 # field = ax1.tripcolor(sim.X, sim.Y, f(np.vstack((sim.X,sim.Y)).T), shading='gouraud')
 x = np.linspace(0, sim.nodeX[-1], 100)
-for yi in [0.4, 0.5, 0.6]:
+for yi in [0.]:
     try:
         ax1.plot(x, [sim.BC.mapping(np.array([[0, yi]]), i) for i in x], 'k')
     except:

@@ -20,7 +20,7 @@ class slantedSin:
     ymax = 1.
     umax = 1.
     nx = 1
-    ny = 3
+    ny = 1
     theta = np.arctan(nx/ny)
     xfac = 2*np.pi*nx
     yfac = 2*np.pi*ny
@@ -67,12 +67,14 @@ kwargs={
 tolerance = 1e-10
 
 # allocate arrays for convergence testing
-start = 5
-stop = 5
+start = 2
+stop = 7
 nSamples = stop - start + 1
 NX_array = np.logspace(start, stop, num=nSamples, base=2, dtype='int32')
 E_inf = np.empty(nSamples, dtype='float64')
 E_2 = np.empty(nSamples, dtype='float64')
+
+uSum = np.empty((nSamples, nSteps))
 
 # loop over N to test convergence where N is the number of
 # grid cells along one dimension, each cell forms 2 triangles
@@ -89,6 +91,9 @@ for iN, NX in enumerate(NX_array):
     
     print(f'NX = {NX},\tNY = {NY},\tnNodes = {sim.nDoFs}')
 
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
+    # sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCI
+
     # Assemble the stiffness matrix and itialize time-stepping scheme
     sim.computeSpatialDiscretization(NQX=1, NQY=NY, Qord=3, quadType='g',
                                      massLumping = False)
@@ -100,7 +105,10 @@ for iN, NX in enumerate(NX_array):
     start_time = default_timer()
     
     # Solve for the approximate solution
-    sim.step(nSteps, tol=tolerance, atol=tolerance)
+    # sim.step(nSteps, tol=tolerance, atol=tolerance)
+    for step in range(nSteps):
+        uSum[iN, step] = np.sum(sim.u*sim.u_weights)
+        sim.step(1, tol=tolerance, atol=tolerance)
     
     print(f'solution time = {default_timer()-start_time} s')
     start_time = default_timer()
@@ -127,16 +135,6 @@ for iN, NX in enumerate(NX_array):
 print(f'min(E_inf) = {np.min(E_inf)}')
 print(f'min(E_2)   = {np.min(E_2)}')
 
-# minMax = np.empty((nSteps+1, 2))
-# minMax[0] = [0., 1.]
-# U_sum = []
-# error = []
-
-#     for i in range(nSteps):
-#         sim.step(1)
-#         # minMax[i+1] = [np.min(u), np.max(u)]
-#         U_sum.append(np.sum(u*u_weights))
-#         error.append(np.linalg.norm(u - exact_solution))
     
 # ##### Begin Plotting Routines #####
 
@@ -261,20 +259,20 @@ def init_plot():
 
 init_plot()
 
-field = ax.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud'
-                          ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
-                          )
+# field = ax.tripcolor(sim.X, sim.Y, sim.U, shading='gouraud'
+#                           ,cmap='seismic', vmin=-maxAbsU, vmax=maxAbsU
+#                           )
 
-def animate(i):
-    global field, sim
-    sim.step(1)
-    sim.computePlottingSolution()
-    field.set_array(sim.U)
-    plt.title(f"t = {sim.integrator.timestep}")
-    return [field]
+# def animate(i):
+#     global field, sim
+#     sim.step(1, tol=tolerance, atol=tolerance)
+#     sim.computePlottingSolution()
+#     field.set_array(sim.U)
+#     plt.title(f"t = {sim.integrator.timestep}")
+#     return [field]
 
-ani = animation.FuncAnimation(
-    fig, animate, frames=nSteps, interval=15)
+# ani = animation.FuncAnimation(
+#     fig, animate, frames=nSteps, interval=15)
 
 # # ani.save('movie.mp4', writer='ffmpeg', dpi=200)
 
