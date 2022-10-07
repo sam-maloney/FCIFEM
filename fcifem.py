@@ -518,6 +518,7 @@ class FciFemSim:
         self.u_weights = np.zeros(nNodes)
 
         self.store = []
+        quadWeightsList = []
 
         gd = np.empty(9 * nQuads * NX)
         ri = np.empty(9 * nQuads * NX, dtype='int')
@@ -558,7 +559,7 @@ class FciFemSim:
             for iQ, quad in enumerate(quads):
                 phis, gradphis, inds = self.BC(quad, iPlane)
                 quadWeight = quadWeights[iQ]
-                self.store.append((inds, phis, gradphis, quadWeight, quad))
+                self.store.append((inds, phis, gradphis, quad))
 
                 for alpha, i in enumerate(inds):
                     disp = quad - self.nodes[i]
@@ -575,6 +576,8 @@ class FciFemSim:
                     ri[index:index+2] = (i, i + indexOffset)
                     ci[index:index+2] = iQ + iPlane*nQuads
                     index += 2
+            
+            quadWeightsList.append(quadWeights)
 
         gd[index:index + nQuads*NX] = 1.0
         if includeBoundaries:
@@ -612,15 +615,15 @@ class FciFemSim:
             self.boundaryIntegrals[-2*nYnodes - 1] = \
                 -g(self.nodes[-2*nYnodes - 1]) * 0.5 * \
                 (1/self.idy[0][0], DirichletNodeX[0][1])
-            # [6.28318531, 0.        ]
+            # [xmax, 0.        ]
             self.boundaryIntegrals[nTopNodes] = \
                 g(self.nodes[nDoFs + nTopNodes]) * 0.5 * \
                 (1/self.idy[-1][0], DirichletNodeX[0][-2] - self.xmax)
-            # [0., 1.]
+            # [0., ymax]
             self.boundaryIntegrals[nTopNodes - 1] = \
                 g(self.nodes[nDoFs + nTopNodes - 1]) * 0.5 * \
                 (-1/self.idy[0][-1], DirichletNodeX[1][1])
-            # [6.28318531, 1.        ]
+            # [xmax, ymax]
             self.boundaryIntegrals[0] = g(self.nodes[nDoFs]) * 0.5 * \
                 (1/self.idy[-1][-1], self.xmax - DirichletNodeX[1][-2])
             self.rOld[nDoFs:,:,0] += self.boundaryIntegrals
@@ -640,7 +643,7 @@ class FciFemSim:
             self.boundaryIntegrals[-2*nYnodes:-nYnodes-1,0] = \
                 g(self.nodes[-2*nYnodes:-nYnodes-1]) \
               * 0.5 * np.flip(self.nodeY[-1,2:] - self.nodeY[-1,:-2])
-            # [6.28318531, 0.        ]
+            # [xmax, 0.]
             self.boundaryIntegrals[-nYnodes-1,0] = g(self.nodes[-nYnodes-1]) \
                 * 0.5 * (self.nodeY[-1,1] + 1-self.nodeY[-1,-2])
             self.rOld[nDoFs:,:,0] += self.boundaryIntegrals
@@ -678,6 +681,7 @@ class FciFemSim:
         # self.vci_solver = 'ssqr.QR_C'
 
         ##### Using SuiteSparse min2norm (QR based solver) #####
+        # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
         G = sp.csc_matrix((gd[:index], (ri[:index], ci[:index])),
                           shape=(np.iinfo('int32').max + 1, nQuads * NX))
         G._shape = (nConstraints, nQuads * NX)
@@ -715,11 +719,13 @@ class FciFemSim:
         # self.vci_solver = 'scipy.optimize.lsq_linear'
 
         self.rNew = np.zeros((nNodes, self.ndim, 3))
+        
+        quadWeights = np.concatenate(quadWeightsList) + self.xi[0]
+        # quadWeights = np.concatenate(quadWeightsList) + self.xi.x
 
         index = 0
-        for iQ, (inds, phis, gradphis, quadWeight, quad) in enumerate(self.store):
-            quadWeight += self.xi[0][iQ]
-            # quadWeight += self.xi.x[iQ]
+        for iQ, (inds, phis, gradphis, quad) in enumerate(self.store):
+            quadWeight = quadWeights[iQ]
             for alpha, i in enumerate(inds):
                 disp = quad - self.nodes[i]
                 self.rNew[i,:,0] -= gradphis[alpha] * quadWeight
@@ -835,7 +841,7 @@ class FciFemSim:
         gd = np.empty(9 * nQuads)
         ri = np.empty(9 * nQuads, dtype='int')
         ci = np.empty(9 * nQuads, dtype='int')
-        # gradphiSums = np.empty((nNodes, self.ndim))
+        gradphiSums = np.empty((nNodes, self.ndim))
 
         self.rOld = np.zeros((nNodes, self.ndim, 3))
         self.rNew = np.zeros((nNodes, self.ndim, 3))
@@ -845,7 +851,7 @@ class FciFemSim:
         ##### compute spatial discretizaton
         for iPlane in range(NX):
             Gindex = 0
-            # gradphiSums[:] = 0.
+            gradphiSums[:] = 0.
             store = []
             dx = self.dx[iPlane]
             ##### generate quadrature points
@@ -874,7 +880,7 @@ class FciFemSim:
 
                 for alpha, i in enumerate(inds):
                     disp = quad - self.nodes[i]
-                    # gradphiSums[i] -= gradphis[alpha] * quadWeight
+                    gradphiSums[i] -= gradphis[alpha] * quadWeight
                     self.rOld[i,:,0] -= gradphis[alpha] * quadWeight
                     self.rOld[i,0,1] -= phis[alpha] * quadWeight
                     self.rOld[i,1,2] -= phis[alpha] * quadWeight
@@ -887,7 +893,7 @@ class FciFemSim:
                     Gindex += 2
 
             sliceBoundaryIntegrals = self.BC.computeSliceBoundaryIntegrals(iPlane)
-            # gradphiSums += sliceBoundaryIntegrals
+            gradphiSums += sliceBoundaryIntegrals
             self.integrals.append(sliceBoundaryIntegrals)
 
             self.rOld[:,:,0] += sliceBoundaryIntegrals
@@ -900,30 +906,32 @@ class FciFemSim:
 
             # start_time = default_timer()
 
-            # ##### Using SuiteSparseQR_min2norm #####
+            ##### Using SuiteSparseQR_min2norm #####
+            # n.b. using np.iinfo('int32').max + 1 forces indices to be int64
+            G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
+                              shape=(np.iinfo('int32').max + 1, nQuads))
+            G._shape = (2*nNodes + 1, nQuads)
             # G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
-            #                   shape=(np.iinfo('int32').max + 1, nQuads))
-            # G._shape = (2*nNodes + 1, nQuads)
-            # # G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
-            # #                   shape=(2*nNodes + 1, nQuads))
+            #                   shape=(2*nNodes + 1, nQuads))
             # rhs = np.append(dx, sliceBoundaryIntegrals.T.ravel())
-            # xi = ssqr.min2norm(G, rhs).ravel()
-            # self.vci_solver = 'ssqr.min2norm'
+            rhs = np.append(0., gradphiSums.T.ravel())
+            xi = ssqr.min2norm(G, rhs).ravel()
+            self.vci_solver = 'ssqr.min2norm'
 
-            ##### Using scipy.sparse.linalg #####
-            ##### slower, but uses less RAM and (slightly) more stable #####
-            G = sp.csr_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
-                                    shape=(2*nNodes + 1, nQuads))
-            rhs = np.append(dx, sliceBoundaryIntegrals.T.ravel())
+            # ##### Using scipy.sparse.linalg #####
+            # ##### slower, but uses less RAM and (slightly) more stable #####
+            # G = sp.csr_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
+            #                         shape=(2*nNodes + 1, nQuads))
+            # # rhs = np.append(dx, sliceBoundaryIntegrals.T.ravel())
             # rhs = np.append(0., gradphiSums.T.ravel())
-            maxit = nQuads
-            tol = 1e-10
-            # D = sp.diags(1/np.sqrt(G.power(2).sum(axis=0)).A1, format='csc')
-            # xi = D @ sp_la.lsmr(G @ D, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
-            # # xi = D @ sp_la.lsqr(G @ D, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
-            # xi = sp_la.lsmr(G, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
-            xi = sp_la.lsqr(G, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
-            self.vci_solver = 'scipy.sparse.linalg.lsqr'
+            # maxit = nQuads
+            # tol = 1e-10
+            # # D = sp.diags(1/np.sqrt(G.power(2).sum(axis=0)).A1, format='csc')
+            # # xi = D @ sp_la.lsmr(G @ D, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
+            # # # xi = D @ sp_la.lsqr(G @ D, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
+            # # xi = sp_la.lsmr(G, rhs, atol=tol, btol=tol, maxiter=maxit)[0]
+            # xi = sp_la.lsqr(G, rhs, atol=tol, btol=tol, iter_lim=maxit)[0]
+            # self.vci_solver = 'scipy.sparse.linalg.lsqr'
 
             # # attempting precondtioning with R factor; was not helpful
             # G = sp.csc_matrix((gd[:Gindex], (ri[:Gindex], ci[:Gindex])),
@@ -993,7 +1001,7 @@ class FciFemSim:
 
             # print(f'xi solve time = {default_timer()-start_time} s')
 
-            quadWeights = xi
+            quadWeights += xi
 
             for iQ, quad in enumerate(quads):
                 quadWeight = quadWeights[iQ]

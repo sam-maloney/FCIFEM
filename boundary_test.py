@@ -194,7 +194,7 @@ for iN, NX in enumerate(NX_array):
     except:
         pass
 
-    t_setup[iN] = default_timer()-start_time
+    t_setup[iN] = default_timer() - start_time
     print(f'setup time = {t_setup[iN]:.8e} s')
     start_time = default_timer()
 
@@ -203,7 +203,7 @@ for iN, NX in enumerate(NX_array):
     tolerance = 1e-10
     sim.u, info = sp_la.lgmres(sim.K, sim.b, tol=tolerance, atol=tolerance)
 
-    t_solve[iN] = default_timer()-start_time
+    t_solve[iN] = default_timer() - start_time
     print(f'solve time = {t_solve[iN]:.8e} s')
     start_time = default_timer()
 
@@ -231,8 +231,7 @@ with np.printoptions(formatter={'float': lambda x: format(x, '.8e')}):
 
 #%% Plotting
 
-# clear the current figure, if opened, and set parameters
-# fig = plt.gcf()
+# open new figure and set parameters
 fig = plt.figure()
 fig.clf()
 fig.set_size_inches(7.75,3)
