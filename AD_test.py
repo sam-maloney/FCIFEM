@@ -37,8 +37,8 @@ u0 = slantedSin()
 uExactFunc = u0.solution
 
 # mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
-# mapping = fcifem.mappings.LinearMapping(u0.nx/u0.ny)
-mapping = fcifem.mappings.StraightMapping()
+mapping = fcifem.mappings.LinearMapping(u0.nx/u0.ny)
+# mapping = fcifem.mappings.StraightMapping()
 
 velocity = np.array([0., 0.])
 
@@ -93,8 +93,8 @@ for iN, NX in enumerate(NX_array):
     
     print(f'NX = {NX},\tNY = {NY},\tnDoFs = {sim.nDoFs}')
 
-    vci = 'VCI-C'
-    # vci = None
+    # vci = 'VCI-C'
+    vci = None
     if (vci == 'VCI'):
         sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationLinearVCI
     elif (vci == 'VCI-C'):
@@ -102,9 +102,10 @@ for iN, NX in enumerate(NX_array):
         sim.computeSpatialDiscretization = sim.computeSpatialDiscretizationConservativeLinearVCIold
 
     # Assemble the stiffness matrix and itialize time-stepping scheme
-    NQX = NY//NX
+    NQX = 2*NY//NX
+    # NQX = 2
     NQY = NY
-    Qord = 3
+    Qord = 2
     sim.computeSpatialDiscretization(NQX=NQX, NQY=NQY, Qord=Qord, quadType='g',
                                      massLumping = False)
     # sim.initializeTimeIntegrator('BE', dt)
