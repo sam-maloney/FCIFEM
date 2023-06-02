@@ -97,9 +97,28 @@ class sinXsinY:
     def solution(self, p):
         return self.umax * self(p)
 
-f = slantedTestProblem()
+class linearPatch:
+    xmax = 1.
+    ymax = 1.
+    umax = 1.
+    
+    b = 0.05
+    # define a such that (0, 0) maps to (xmax, 1) for given b and xmax
+    a = (1 - b*xmax)/xmax**2
+
+    def __call__(self, p):
+        nPoints = p.size // 2
+        return np.zeros(nPoints)
+
+    def solution(self, p):
+        x = p.reshape(-1,2)[:,0]
+        y = p.reshape(-1,2)[:,1]
+        return 1*x + 2*y
+
+# f = slantedTestProblem()
 # f = simplifiedSlantProblem()
 # f = sinXsinY()
+f = linearPatch()
 
 # mapping = fcifem.mappings.SinusoidalMapping(0.2, -0.25*f.xmax, f.xmax)
 mapping = fcifem.mappings.LinearMapping(1/f.xmax)
