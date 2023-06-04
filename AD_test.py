@@ -34,7 +34,6 @@ class slantedSin:
         return self.__call__(p)
 
 u0 = slantedSin()
-uExactFunc = u0.solution
 
 # mapping = fcifem.mappings.SinusoidalMapping(0.2, -np.pi/2)
 mapping = fcifem.mappings.LinearMapping(u0.nx/u0.ny)
@@ -127,7 +126,7 @@ for iN, NX in enumerate(NX_array):
     start_time = default_timer()
     
     # compute the analytic solution and error norms
-    u_exact = uExactFunc(sim.DoFs)
+    u_exact = u0.solution(sim.DoFs)
     
     E_inf[iN] = np.linalg.norm(sim.u - u_exact, np.inf)
     E_2[iN] = np.linalg.norm(sim.u - u_exact)/np.sqrt(sim.nDoFs)
